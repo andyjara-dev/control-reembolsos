@@ -1,0 +1,19 @@
+services:
+  api:
+    build: ./backend
+    volumes:
+      - ./data:/app/data
+    environment:
+      - JWT_SECRET=cambiar-en-produccion
+      - ADMIN_USER=admin
+      - ADMIN_PASS=admin123
+      - DB_PATH=/app/data/reembolsos.db
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
