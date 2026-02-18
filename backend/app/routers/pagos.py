@@ -21,6 +21,60 @@ IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
 VALID_TIPO_IMAGEN = {"cobro", "reembolso"}
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 
+# ── Paleta de colores para PDFs ──────────────────────────────────────────────
+_PDF_COLORS = {
+    "navy_dark":  "#0d1b4b",
+    "navy":       "#1a237e",
+    "navy_light": "#e8ecf7",
+    "gold":       "#c9a84c",
+    "gold_light": "#f5edda",
+    "cream":      "#fdf8f0",
+    "charcoal":   "#2c2c2c",
+    "border":     "#d4c9a8",
+}
+
+
+def _get_pdf_fonts() -> dict:
+    """Registra y retorna fuentes TrueType si están disponibles; hace fallback a fuentes PDF estándar."""
+    try:
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+
+        font_dir = Path("/usr/share/fonts/truetype/freefont")
+        mapping = {
+            "PdfHeader":       "FreeSansBold.ttf",          # cabecera: sans-serif bold
+            "PdfHeaderItalic": "FreeSansBoldOblique.ttf",
+            "PdfNormal":       "FreeSerif.ttf",             # cuerpo: serif elegante
+            "PdfBold":         "FreeSerifBold.ttf",
+            "PdfItalic":       "FreeSerifItalic.ttf",
+            "PdfBoldItalic":   "FreeSerifBoldItalic.ttf",
+        }
+        for name, fname in mapping.items():
+            fp = font_dir / fname
+            if not fp.exists():
+                raise FileNotFoundError(fp)
+            try:
+                pdfmetrics.getFont(name)
+            except KeyError:
+                pdfmetrics.registerFont(TTFont(name, str(fp)))
+        return {
+            "header":      "PdfHeader",
+            "header_it":   "PdfHeaderItalic",
+            "normal":      "PdfNormal",
+            "bold":        "PdfBold",
+            "italic":      "PdfItalic",
+            "bold_italic": "PdfBoldItalic",
+        }
+    except Exception:
+        return {
+            "header":      "Helvetica-Bold",
+            "header_it":   "Helvetica-BoldOblique",
+            "normal":      "Times-Roman",
+            "bold":        "Times-Bold",
+            "italic":      "Times-Italic",
+            "bold_italic": "Times-BoldItalic",
+        }
+
 router = APIRouter(prefix="/api/pagos", tags=["pagos"], dependencies=[Depends(get_current_user)])
 
 
@@ -86,9 +140,13 @@ def generar_reporte(
 ):
     from reportlab.lib.pagesizes import letter, landscape
     from reportlab.lib import colors
-    from reportlab.platypus import SimpleDocTemplate, Table as RLTable, TableStyle, Paragraph, Spacer
-    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+    from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.units import cm
+    from reportlab.platypus import (
+        HRFlowable, Paragraph, SimpleDocTemplate, Spacer,
+        Table as RLTable, TableStyle,
+    )
 
     q = db.query(Pago)
     if estado:
@@ -103,47 +161,116 @@ def generar_reporte(
         q = q.filter(Pago.fecha_pago <= hasta)
     pagos = q.order_by(Pago.fecha_pago.desc()).all()
 
+    fonts = _get_pdf_fonts()
+    C = {k: colors.HexColor(v) for k, v in _PDF_COLORS.items()}
+    C["white"] = colors.white
+
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=landscape(letter), topMargin=1 * cm, bottomMargin=1 * cm)
-    styles = getSampleStyleSheet()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=landscape(letter),
+        topMargin=1.5 * cm, bottomMargin=1.5 * cm,
+        leftMargin=1.5 * cm, rightMargin=1.5 * cm,
+    )
     elements = []
 
-    elements.append(Paragraph("Reporte de Pagos", styles["Title"]))
-    elements.append(Paragraph(f"Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}", styles["Normal"]))
-    elements.append(Spacer(1, 12))
+    # ── Banda de cabecera ────────────────────────────────────────────────────
+    title_style = ParagraphStyle(
+        "RTitle",
+        fontName=fonts["header"],
+        fontSize=22,
+        textColor=C["white"],
+        alignment=TA_CENTER,
+        spaceAfter=0,
+        spaceBefore=0,
+    )
+    date_style = ParagraphStyle(
+        "RDate",
+        fontName=fonts["italic"],
+        fontSize=9,
+        textColor=C["gold"],
+        alignment=TA_CENTER,
+    )
+    header_band = RLTable(
+        [
+            [Paragraph("Reporte de Pagos", title_style)],
+            [Paragraph(f"Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}", date_style)],
+        ],
+        colWidths=[doc.width],
+    )
+    header_band.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, -1), C["navy_dark"]),
+        ("TOPPADDING",    (0, 0), (-1, 0),  16),
+        ("BOTTOMPADDING", (0, 0), (-1, 0),  4),
+        ("TOPPADDING",    (0, 1), (-1, 1),  2),
+        ("BOTTOMPADDING", (0, 1), (-1, 1),  14),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+    ]))
+    elements.append(header_band)
+    elements.append(HRFlowable(width="100%", thickness=3, color=C["gold"], spaceBefore=0, spaceAfter=10))
 
-    header = ["Fecha", "Concepto", "Proveedor", "Monto", "Moneda", "Monto CLP", "Tipo", "Estado"]
-    data = [header]
+    # ── Tabla de datos ───────────────────────────────────────────────────────
+    header_row = ["Fecha", "Concepto", "Proveedor", "Monto", "Moneda", "Monto CLP", "Tipo", "Estado"]
+    data = [header_row]
     total_monto = Decimal("0")
     total_clp = Decimal("0")
     for p in pagos:
         data.append([
-            str(p.fecha_pago),
-            p.concepto[:40],
-            p.proveedor[:30],
-            f"{p.monto:,.2f}",
-            p.moneda,
+            p.fecha_pago.strftime("%d/%m/%Y") if p.fecha_pago else "-",
+            (p.concepto or "-")[:42],
+            (p.proveedor or "-")[:30],
+            f"{p.monto:,.2f}" if p.monto else "-",
+            p.moneda or "-",
             f"{p.monto_clp:,.0f}" if p.monto_clp else "-",
-            p.tipo,
-            p.estado,
+            p.tipo or "-",
+            p.estado or "-",
         ])
         total_monto += p.monto or Decimal("0")
         total_clp += p.monto_clp or Decimal("0")
-
     data.append(["", "", "TOTALES", f"{total_monto:,.2f}", "", f"{total_clp:,.0f}" if total_clp else "-", "", ""])
 
-    table = RLTable(data, repeatRows=1)
+    w = doc.width
+    col_widths = [w * 0.08, w * 0.22, w * 0.18, w * 0.11, w * 0.07, w * 0.13, w * 0.11, w * 0.10]
+
+    n = len(data)
+    alternating = [("BACKGROUND", (0, i), (-1, i), C["cream"] if i % 2 == 0 else C["white"])
+                   for i in range(1, n - 1)]
+
+    table = RLTable(data, colWidths=col_widths, repeatRows=1)
     table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1976d2")),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("FONTSIZE", (0, 0), (-1, -1), 8),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -2), [colors.whitesmoke, colors.white]),
-        ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#e3f2fd")),
-        ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
-        ("ALIGN", (3, 0), (3, -1), "RIGHT"),
-        ("ALIGN", (5, 0), (5, -1), "RIGHT"),
+        # Encabezado
+        ("BACKGROUND",    (0, 0),  (-1, 0),  C["navy"]),
+        ("TEXTCOLOR",     (0, 0),  (-1, 0),  C["white"]),
+        ("FONTNAME",      (0, 0),  (-1, 0),  fonts["header"]),
+        ("FONTSIZE",      (0, 0),  (-1, 0),  9),
+        ("ALIGN",         (0, 0),  (-1, 0),  "CENTER"),
+        ("TOPPADDING",    (0, 0),  (-1, 0),  8),
+        ("BOTTOMPADDING", (0, 0),  (-1, 0),  8),
+        # Cuerpo
+        ("FONTNAME",      (0, 1),  (-1, -2), fonts["normal"]),
+        ("FONTSIZE",      (0, 1),  (-1, -2), 8),
+        ("TEXTCOLOR",     (0, 1),  (-1, -2), C["charcoal"]),
+        ("TOPPADDING",    (0, 1),  (-1, -2), 5),
+        ("BOTTOMPADDING", (0, 1),  (-1, -2), 5),
+        # Fila de totales
+        ("BACKGROUND",    (0, -1), (-1, -1), C["gold_light"]),
+        ("FONTNAME",      (0, -1), (-1, -1), fonts["bold"]),
+        ("FONTSIZE",      (0, -1), (-1, -1), 9),
+        ("TEXTCOLOR",     (0, -1), (-1, -1), C["navy_dark"]),
+        ("TOPPADDING",    (0, -1), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, -1), (-1, -1), 7),
+        # Alineación de montos
+        ("ALIGN",         (3, 1),  (3, -1),  "RIGHT"),
+        ("ALIGN",         (5, 1),  (5, -1),  "RIGHT"),
+        # Bordes
+        ("GRID",          (0, 0),  (-1, -1), 0.5, C["border"]),
+        ("LINEBELOW",     (0, 0),  (-1, 0),  1.5, C["gold"]),
+        ("LINEABOVE",     (0, -1), (-1, -1), 1.0, C["gold"]),
+        # Paddings laterales
+        ("LEFTPADDING",   (0, 0),  (-1, -1), 6),
+        ("RIGHTPADDING",  (0, 0),  (-1, -1), 6),
+        *alternating,
     ]))
     elements.append(table)
 
@@ -160,38 +287,63 @@ def generar_reporte(
 def generar_pdf_individual(pago_id: int, db: Session = Depends(get_db)):
     from reportlab.lib.pagesizes import letter
     from reportlab.lib import colors
+    from reportlab.lib.enums import TA_CENTER
+    from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.units import cm
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.platypus import (
-        SimpleDocTemplate, Table as RLTable, TableStyle, Paragraph, Spacer, Image as RLImage, PageBreak,
+        HRFlowable, Image as RLImage, PageBreak, Paragraph,
+        SimpleDocTemplate, Spacer, Table as RLTable, TableStyle,
     )
 
     pago = db.query(Pago).filter(Pago.id == pago_id).first()
     if not pago:
         raise HTTPException(status_code=404, detail="Pago no encontrado")
 
+    fonts = _get_pdf_fonts()
+    C = {k: colors.HexColor(v) for k, v in _PDF_COLORS.items()}
+    C["white"] = colors.white
+
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=2 * cm, bottomMargin=2 * cm,
-                            leftMargin=2.5 * cm, rightMargin=2.5 * cm)
-    styles = getSampleStyleSheet()
+    doc = SimpleDocTemplate(
+        buffer, pagesize=letter,
+        topMargin=1.5 * cm, bottomMargin=2 * cm,
+        leftMargin=2.5 * cm, rightMargin=2.5 * cm,
+    )
     elements = []
 
-    # Estilos personalizados
-    header_style = ParagraphStyle("Header", parent=styles["Title"], fontSize=16,
-                                  textColor=colors.HexColor("#1a237e"), spaceAfter=4)
-    subtitle_style = ParagraphStyle("Subtitle", parent=styles["Heading2"], fontSize=13,
-                                    textColor=colors.HexColor("#333333"), spaceAfter=20)
+    # ── Banda de cabecera principal ─────────────────────────────────────────
+    header_band = RLTable(
+        [[Paragraph("Del escritorio de Andy Jara M.", ParagraphStyle(
+            "MainH",
+            fontName=fonts["header"],
+            fontSize=21,
+            textColor=C["white"],
+            alignment=TA_CENTER,
+        ))]],
+        colWidths=[doc.width],
+    )
+    header_band.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, -1), C["navy_dark"]),
+        ("TOPPADDING",    (0, 0), (-1, -1), 22),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 22),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 12),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 12),
+    ]))
+    elements.append(header_band)
+    elements.append(HRFlowable(width="100%", thickness=3, color=C["gold"], spaceBefore=0, spaceAfter=10))
 
-    # Cabecera
-    elements.append(Paragraph("Del escritorio de Andy Jara M.", header_style))
-    if pago.tipo == "REEMBOLSO":
-        subtitulo = "Solicitud de reembolso de gasto"
-    else:
-        subtitulo = "Solicitud de provisión de fondos"
-    elements.append(Paragraph(subtitulo, subtitle_style))
-    elements.append(Spacer(1, 12))
+    # ── Subtítulo ────────────────────────────────────────────────────────────
+    subtitulo = "Solicitud de reembolso de gasto" if pago.tipo == "REEMBOLSO" else "Solicitud de provisión de fondos"
+    elements.append(Paragraph(subtitulo, ParagraphStyle(
+        "Subtitle",
+        fontName=fonts["italic"],
+        fontSize=13,
+        textColor=C["navy"],
+        alignment=TA_CENTER,
+        spaceAfter=16,
+    )))
 
-    # Tabla de datos
+    # ── Tabla de datos ───────────────────────────────────────────────────────
     def fmt_date(d):
         return d.strftime("%d/%m/%Y") if d else "-"
 
@@ -201,55 +353,101 @@ def generar_pdf_individual(pago_id: int, db: Session = Depends(get_db)):
         formatted = f"{val:,.2f}"
         return f"{formatted} {moneda}".strip() if moneda else formatted
 
+    label_st = ParagraphStyle("Lbl", fontName=fonts["bold"],   fontSize=10, textColor=C["navy_dark"], leading=14)
+    value_st = ParagraphStyle("Val", fontName=fonts["normal"], fontSize=10, textColor=C["charcoal"],  leading=14)
+
+    estado_color = {
+        "PENDIENTE":  colors.HexColor("#fff3e0"),
+        "SOLICITADO": C["navy_light"],
+        "PAGADO":     colors.HexColor("#e8f5e9"),
+    }.get(pago.estado or "", C["white"])
+
     datos = [
-        ["Fecha de pago", fmt_date(pago.fecha_pago)],
-        ["Concepto", pago.concepto or "-"],
-        ["Proveedor", pago.proveedor or "-"],
-        ["Monto", fmt_money(pago.monto, pago.moneda)],
-        ["Equivalente CLP", f"{pago.monto_clp:,.0f} CLP" if pago.monto_clp else "-"],
-        ["Estado", pago.estado],
-        ["Fecha solicitud", fmt_date(pago.fecha_solicitud)],
-        ["Fecha reembolso/pago", fmt_date(pago.fecha_reembolso)],
-        ["Comprobante", pago.comprobante or "-"],
-        ["Notas", pago.notas or "-"],
+        [Paragraph("Fecha de pago",         label_st), Paragraph(fmt_date(pago.fecha_pago),                           value_st)],
+        [Paragraph("Concepto",              label_st), Paragraph(pago.concepto or "-",                                value_st)],
+        [Paragraph("Proveedor",             label_st), Paragraph(pago.proveedor or "-",                               value_st)],
+        [Paragraph("Monto",                 label_st), Paragraph(fmt_money(pago.monto, pago.moneda),                  value_st)],
+        [Paragraph("Equivalente CLP",       label_st), Paragraph(f"{pago.monto_clp:,.0f} CLP" if pago.monto_clp else "-", value_st)],
+        [Paragraph("Estado",                label_st), Paragraph(pago.estado or "-",                                  value_st)],
+        [Paragraph("Fecha solicitud",       label_st), Paragraph(fmt_date(pago.fecha_solicitud),                      value_st)],
+        [Paragraph("Fecha reembolso/pago",  label_st), Paragraph(fmt_date(pago.fecha_reembolso),                      value_st)],
+        [Paragraph("Comprobante",           label_st), Paragraph(pago.comprobante or "-",                             value_st)],
+        [Paragraph("Notas",                 label_st), Paragraph(pago.notas or "-",                                   value_st)],
     ]
 
-    table = RLTable(datos, colWidths=[5.5 * cm, 10 * cm])
+    table = RLTable(datos, colWidths=[5 * cm, 11 * cm])
     table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#e8eaf6")),
-        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, -1), 10),
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#bbbbbb")),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 6),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        # Columna de etiquetas
+        ("BACKGROUND",    (0, 0),  (0, -1),  C["gold_light"]),
+        # Columna de valores (alternando)
+        ("BACKGROUND",    (1, 0),  (1, -1),  C["white"]),
+        ("BACKGROUND",    (1, 1),  (1, 1),   C["cream"]),
+        ("BACKGROUND",    (1, 3),  (1, 3),   C["cream"]),
+        ("BACKGROUND",    (1, 7),  (1, 7),   C["cream"]),
+        ("BACKGROUND",    (1, 9),  (1, 9),   C["cream"]),
+        # Fila de estado con color dinámico
+        ("BACKGROUND",    (1, 5),  (1, 5),   estado_color),
+        # Separador vertical dorado entre etiqueta y valor
+        ("LINEAFTER",     (0, 0),  (0, -1),  1.5, C["gold"]),
+        # Bordes
+        ("GRID",          (0, 0),  (-1, -1), 0.5, C["border"]),
+        ("LINEABOVE",     (0, 0),  (-1, 0),  1.5, C["navy_dark"]),
+        ("LINEBELOW",     (0, -1), (-1, -1), 1.5, C["gold"]),
+        # Tipografía y layout
+        ("VALIGN",        (0, 0),  (-1, -1), "MIDDLE"),
+        ("TOPPADDING",    (0, 0),  (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0),  (-1, -1), 8),
+        ("LEFTPADDING",   (0, 0),  (-1, -1), 10),
+        ("RIGHTPADDING",  (0, 0),  (-1, -1), 10),
     ]))
     elements.append(table)
 
-    # Página 2: comprobantes adjuntos (imágenes)
+    # ── Pie de página ────────────────────────────────────────────────────────
+    elements.append(Spacer(1, 18))
+    elements.append(HRFlowable(width="100%", thickness=1, color=C["gold"], spaceBefore=0, spaceAfter=6))
+    elements.append(Paragraph(
+        f"Documento generado el {datetime.now().strftime('%d/%m/%Y a las %H:%M')}",
+        ParagraphStyle("Footer", fontName=fonts["italic"], fontSize=8,
+                       textColor=colors.HexColor("#888888"), alignment=TA_CENTER),
+    ))
+
+    # ── Página 2: comprobantes adjuntos ──────────────────────────────────────
     imagenes = db.query(ImagenPago).filter(ImagenPago.pago_id == pago_id).all()
     if imagenes:
         elements.append(PageBreak())
-        elements.append(Paragraph("Comprobantes adjuntos", styles["Heading2"]))
-        elements.append(Spacer(1, 12))
+        img_band = RLTable(
+            [[Paragraph("Comprobantes adjuntos", ParagraphStyle(
+                "ImgH",
+                fontName=fonts["header"],
+                fontSize=16,
+                textColor=C["white"],
+                alignment=TA_CENTER,
+            ))]],
+            colWidths=[doc.width],
+        )
+        img_band.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (-1, -1), C["navy_dark"]),
+            ("TOPPADDING",    (0, 0), (-1, -1), 14),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 14),
+        ]))
+        elements.append(img_band)
+        elements.append(HRFlowable(width="100%", thickness=3, color=C["gold"], spaceBefore=0, spaceAfter=16))
 
         max_width = 15 * cm
         max_height = 10 * cm
+        img_label_st = ParagraphStyle("ImgLbl", fontName=fonts["bold"], fontSize=10, textColor=C["navy"])
 
         for img_record in imagenes:
             filepath = Path(UPLOAD_DIR) / img_record.filename
             if not filepath.exists():
                 continue
-            ext = filepath.suffix.lower()
-            if ext not in IMAGE_EXTENSIONS:
+            if filepath.suffix.lower() not in IMAGE_EXTENSIONS:
                 continue
             try:
                 label = "Cobro" if img_record.tipo_imagen == "cobro" else "Reembolso"
-                elements.append(Paragraph(f"<b>{label}</b>", styles["Normal"]))
+                elements.append(Paragraph(label, img_label_st))
                 elements.append(Spacer(1, 4))
                 rl_img = RLImage(str(filepath))
-                # Escalar manteniendo proporción
                 iw, ih = rl_img.imageWidth, rl_img.imageHeight
                 if iw > 0 and ih > 0:
                     ratio = min(max_width / iw, max_height / ih, 1.0)
