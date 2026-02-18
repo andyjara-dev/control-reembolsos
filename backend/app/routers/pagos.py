@@ -313,7 +313,7 @@ def generar_pdf_individual(pago_id: int, db: Session = Depends(get_db)):
 
     # ── Banda de cabecera principal ─────────────────────────────────────────
     header_band = RLTable(
-        [[Paragraph("Del escritorio de Andy Jara M.", ParagraphStyle(
+        [[Paragraph("Andy Jara M.", ParagraphStyle(
             "MainH",
             fontName=fonts["header"],
             fontSize=21,
