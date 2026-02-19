@@ -13,8 +13,11 @@ const TIPOS = ['REEMBOLSO', 'PROVISION'];
 const ESTADOS = ['PENDIENTE', 'SOLICITADO', 'PAGADO'];
 const MONEDAS = ['USD', 'EUR', 'MXN', 'ARS', 'COP', 'CLP'];
 
+const fechaChile = () =>
+  new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santiago' }).format(new Date());
+
 const emptyPago = {
-  fecha_pago: new Date().toISOString().slice(0, 10),
+  fecha_pago: '',
   concepto: '', proveedor: '', monto: '', moneda: 'USD', monto_clp: '',
   tipo: 'REEMBOLSO', estado: 'PENDIENTE',
   fecha_solicitud: '', fecha_reembolso: '', comprobante: '', notas: '',
@@ -61,7 +64,7 @@ export default function Pagos() {
       });
     } else {
       setEditId(null);
-      setForm(emptyPago);
+      setForm({ ...emptyPago, fecha_pago: fechaChile() });
     }
     setNewImagenesCobro([]);
     setNewImagenesReembolso([]);
@@ -128,10 +131,10 @@ export default function Pagos() {
   const handleEstadoChange = async (pago, nuevoEstado) => {
     const updates = { estado: nuevoEstado };
     if (nuevoEstado === 'SOLICITADO' && !pago.fecha_solicitud) {
-      updates.fecha_solicitud = new Date().toISOString().slice(0, 10);
+      updates.fecha_solicitud = fechaChile();
     }
     if (nuevoEstado === 'PAGADO' && !pago.fecha_reembolso) {
-      updates.fecha_reembolso = new Date().toISOString().slice(0, 10);
+      updates.fecha_reembolso = fechaChile();
     }
     await api.put(`/pagos/${pago.id}`, updates);
     load();

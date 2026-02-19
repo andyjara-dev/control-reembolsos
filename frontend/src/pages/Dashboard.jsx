@@ -16,12 +16,12 @@ export default function Dashboard() {
   if (!resumen) return <Typography>Cargando...</Typography>;
 
   const cards = [
-    { label: 'Pendiente Reembolso', value: resumen.total_pendiente_reembolso, color: '#ff9800' },
-    { label: 'Pendiente Provisión', value: resumen.total_pendiente_provision, color: '#f44336' },
-    { label: 'Solicitado Reembolso', value: resumen.total_solicitado_reembolso, color: '#2196f3' },
-    { label: 'Solicitado Provisión', value: resumen.total_solicitado_provision, color: '#03a9f4' },
-    { label: 'Pagado este mes', value: resumen.total_pagado_mes, color: '#4caf50' },
-    { label: 'Pagos pendientes', value: resumen.cantidad_pendientes, color: '#9c27b0', isCant: true },
+    { label: 'Pendiente Reembolso', value: resumen.total_pendiente_reembolso, color: '#FFB236' },
+    { label: 'Pendiente Provisión', value: resumen.total_pendiente_provision, color: '#FF3636' },
+    { label: 'Solicitado Reembolso', value: resumen.total_solicitado_reembolso, color: '#2CA8FF' },
+    { label: 'Solicitado Provisión', value: resumen.total_solicitado_provision, color: '#7ee1ff' },
+    { label: 'Pagado este mes', value: resumen.total_pagado_mes, color: '#0487a8' },
+    { label: 'Pagos pendientes', value: resumen.cantidad_pendientes, color: '#2c2c2c', isCant: true },
   ];
 
   return (
@@ -34,7 +34,7 @@ export default function Dashboard() {
               <CardContent>
                 <Typography variant="body2" color="text.secondary">{c.label}</Typography>
                 <Typography variant="h5">
-                  {c.isCant ? c.value : `$${Number(c.value).toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
+                  {c.isCant ? c.value : `$${Number(c.value).toLocaleString('es-CL', { maximumFractionDigits: 0 })}`}
                 </Typography>
               </CardContent>
             </Card>

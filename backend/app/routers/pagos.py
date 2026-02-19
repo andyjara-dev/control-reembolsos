@@ -3,6 +3,7 @@ import os
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
@@ -16,21 +17,23 @@ from app.database import get_db
 from app.models import Pago, ImagenPago, User
 from app.schemas import PagoCreate, PagoUpdate, PagoResponse, ImagenPagoResponse, ResumenResponse
 
+_CHL_TZ = ZoneInfo("America/Santiago")
+
 ALLOWED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp"}
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
 VALID_TIPO_IMAGEN = {"cobro", "reembolso"}
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 
-# ── Paleta de colores para PDFs ──────────────────────────────────────────────
+# ── Paleta de colores para PDFs (desarrollador.cl) ───────────────────────────
 _PDF_COLORS = {
-    "navy_dark":  "#0d1b4b",
-    "navy":       "#1a237e",
-    "navy_light": "#e8ecf7",
-    "gold":       "#c9a84c",
-    "gold_light": "#f5edda",
-    "cream":      "#fdf8f0",
-    "charcoal":   "#2c2c2c",
-    "border":     "#d4c9a8",
+    "navy_dark":  "#036b89",  # teal oscuro (cabecera)
+    "navy":       "#0487a8",  # teal primario
+    "navy_light": "#d1eff6",  # teal claro (relleno alternado)
+    "gold":       "#FFB236",  # naranja acento
+    "gold_light": "#fff8ed",  # naranja muy claro (fondo etiquetas)
+    "cream":      "#f0fafc",  # teal crema (filas alternas)
+    "charcoal":   "#2c2c2c",  # texto oscuro
+    "border":     "#b0d9e4",  # borde teal suave
 }
 
 
@@ -81,14 +84,14 @@ router = APIRouter(prefix="/api/pagos", tags=["pagos"], dependencies=[Depends(ge
 @router.get("/resumen", response_model=ResumenResponse)
 def get_resumen(db: Session = Depends(get_db)):
     def sum_by(tipo: str, estado: str) -> Decimal:
-        result = db.query(func.coalesce(func.sum(Pago.monto), 0)).filter(
+        result = db.query(func.coalesce(func.sum(Pago.monto_clp), 0)).filter(
             Pago.tipo == tipo, Pago.estado == estado
         ).scalar()
         return Decimal(str(result))
 
-    hoy = date.today()
+    hoy = datetime.now(tz=_CHL_TZ).date()
     primer_dia_mes = hoy.replace(day=1)
-    total_pagado_mes = db.query(func.coalesce(func.sum(Pago.monto), 0)).filter(
+    total_pagado_mes = db.query(func.coalesce(func.sum(Pago.monto_clp), 0)).filter(
         Pago.estado == "PAGADO",
         Pago.fecha_reembolso >= primer_dia_mes,
     ).scalar()
@@ -194,7 +197,7 @@ def generar_reporte(
     header_band = RLTable(
         [
             [Paragraph("Reporte de Pagos", title_style)],
-            [Paragraph(f"Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}", date_style)],
+            [Paragraph(f"Generado: {datetime.now(tz=_CHL_TZ).strftime('%d/%m/%Y %H:%M')}", date_style)],
         ],
         colWidths=[doc.width],
     )
@@ -303,45 +306,71 @@ def generar_pdf_individual(pago_id: int, db: Session = Depends(get_db)):
     C = {k: colors.HexColor(v) for k, v in _PDF_COLORS.items()}
     C["white"] = colors.white
 
+    # ── Clase con marca de agua ──────────────────────────────────────────────
+    class _DocWatermark(SimpleDocTemplate):
+        _wm_text: str | None = None
+        _wm_font: str = "Helvetica-Bold"
+
+        def afterPage(self):
+            if self._wm_text:
+                c = self.canv
+                c.saveState()
+                c.setFont(self._wm_font, 90)
+                c.setFillColor(colors.Color(0.15, 0.60, 0.25, alpha=0.22))
+                pw, ph = self.pagesize
+                c.translate(pw / 2, ph / 2)
+                c.rotate(45)
+                c.drawCentredString(0, 0, self._wm_text)
+                c.restoreState()
+
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(
+    doc = _DocWatermark(
         buffer, pagesize=letter,
         topMargin=1.5 * cm, bottomMargin=2 * cm,
         leftMargin=2.5 * cm, rightMargin=2.5 * cm,
     )
+    if pago.estado == "PAGADO":
+        doc._wm_text = "PAGADO"
+        doc._wm_font = fonts.get("header", "Helvetica-Bold")
+
     elements = []
 
     # ── Banda de cabecera principal ─────────────────────────────────────────
+    titulo_txt = (
+        "Solicitud de reembolso de gasto"
+        if pago.tipo == "REEMBOLSO"
+        else "Solicitud de provisión de fondos"
+    )
     header_band = RLTable(
-        [[Paragraph("Andy Jara M.", ParagraphStyle(
-            "MainH",
-            fontName=fonts["header"],
-            fontSize=21,
-            textColor=C["white"],
-            alignment=TA_CENTER,
-        ))]],
+        [
+            [Paragraph(titulo_txt, ParagraphStyle(
+                "MainH",
+                fontName=fonts["header"],
+                fontSize=18,
+                textColor=C["white"],
+                alignment=TA_CENTER,
+            ))],
+            [Paragraph("Andy Jara M.", ParagraphStyle(
+                "SubH",
+                fontName=fonts["header_it"],
+                fontSize=13,
+                textColor=C["gold"],
+                alignment=TA_CENTER,
+            ))],
+        ],
         colWidths=[doc.width],
     )
     header_band.setStyle(TableStyle([
         ("BACKGROUND",    (0, 0), (-1, -1), C["navy_dark"]),
-        ("TOPPADDING",    (0, 0), (-1, -1), 22),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 22),
+        ("TOPPADDING",    (0, 0), (-1, 0),  18),
+        ("BOTTOMPADDING", (0, 0), (-1, 0),  4),
+        ("TOPPADDING",    (0, 1), (-1, 1),  2),
+        ("BOTTOMPADDING", (0, 1), (-1, 1),  14),
         ("LEFTPADDING",   (0, 0), (-1, -1), 12),
         ("RIGHTPADDING",  (0, 0), (-1, -1), 12),
     ]))
     elements.append(header_band)
     elements.append(HRFlowable(width="100%", thickness=3, color=C["gold"], spaceBefore=0, spaceAfter=10))
-
-    # ── Subtítulo ────────────────────────────────────────────────────────────
-    subtitulo = "Solicitud de reembolso de gasto" if pago.tipo == "REEMBOLSO" else "Solicitud de provisión de fondos"
-    elements.append(Paragraph(subtitulo, ParagraphStyle(
-        "Subtitle",
-        fontName=fonts["italic"],
-        fontSize=13,
-        textColor=C["navy"],
-        alignment=TA_CENTER,
-        spaceAfter=16,
-    )))
 
     # ── Tabla de datos ───────────────────────────────────────────────────────
     def fmt_date(d):
@@ -359,7 +388,7 @@ def generar_pdf_individual(pago_id: int, db: Session = Depends(get_db)):
     estado_color = {
         "PENDIENTE":  colors.HexColor("#fff3e0"),
         "SOLICITADO": C["navy_light"],
-        "PAGADO":     colors.HexColor("#e8f5e9"),
+        "PAGADO":     colors.HexColor("#d1eff6"),
     }.get(pago.estado or "", C["white"])
 
     datos = [
@@ -406,7 +435,7 @@ def generar_pdf_individual(pago_id: int, db: Session = Depends(get_db)):
     elements.append(Spacer(1, 18))
     elements.append(HRFlowable(width="100%", thickness=1, color=C["gold"], spaceBefore=0, spaceAfter=6))
     elements.append(Paragraph(
-        f"Documento generado el {datetime.now().strftime('%d/%m/%Y a las %H:%M')}",
+        f"Documento generado el {datetime.now(tz=_CHL_TZ).strftime('%d/%m/%Y a las %H:%M')} (hora Chile)",
         ParagraphStyle("Footer", fontName=fonts["italic"], fontSize=8,
                        textColor=colors.HexColor("#888888"), alignment=TA_CENTER),
     ))
