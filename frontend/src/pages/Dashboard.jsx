@@ -10,7 +10,12 @@ export default function Dashboard() {
 
   useEffect(() => {
     api.get('/pagos/resumen').then((r) => setResumen(r.data));
-    api.get('/pagos', { params: { estado: 'PENDIENTE' } }).then((r) => setPendientes(r.data));
+    Promise.all([
+      api.get('/pagos', { params: { estado: 'PENDIENTE', limit: 200 } }),
+      api.get('/pagos', { params: { estado: 'SOLICITADO', limit: 200 } }),
+    ]).then(([r1, r2]) => {
+      setPendientes([...r1.data.items, ...r2.data.items]);
+    });
   }, []);
 
   if (!resumen) return <Typography>Cargando...</Typography>;
@@ -21,7 +26,7 @@ export default function Dashboard() {
     { label: 'Solicitado Reembolso', value: resumen.total_solicitado_reembolso, color: '#2CA8FF' },
     { label: 'Solicitado Provisión', value: resumen.total_solicitado_provision, color: '#7ee1ff' },
     { label: 'Pagado este mes', value: resumen.total_pagado_mes, color: '#0487a8' },
-    { label: 'Pagos pendientes', value: resumen.cantidad_pendientes, color: '#2c2c2c', isCant: true },
+    { label: 'Pagos no pagados', value: resumen.cantidad_no_pagados, color: '#2c2c2c', isCant: true },
   ];
 
   return (
@@ -42,7 +47,7 @@ export default function Dashboard() {
         ))}
       </Grid>
 
-      <Typography variant="h6" gutterBottom>Pagos Pendientes</Typography>
+      <Typography variant="h6" gutterBottom>Pagos No Pagados</Typography>
       <Table size="small">
         <TableHead>
           <TableRow>
@@ -68,7 +73,7 @@ export default function Dashboard() {
             </TableRow>
           ))}
           {pendientes.length === 0 && (
-            <TableRow><TableCell colSpan={7} align="center">No hay pagos pendientes</TableCell></TableRow>
+            <TableRow><TableCell colSpan={7} align="center">No hay pagos no pagados</TableCell></TableRow>
           )}
         </TableBody>
       </Table>

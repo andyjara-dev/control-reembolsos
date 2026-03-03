@@ -86,3 +86,16 @@ class ResumenResponse(BaseModel):
     total_solicitado_provision: Decimal
     total_pagado_mes: Decimal
     cantidad_pendientes: int
+    cantidad_no_pagados: int
+
+
+class CambiarPasswordRequest(BaseModel):
+    password_actual: str
+    password_nuevo: str
+
+
+class PagosListResponse(BaseModel):
+    items: list[PagoResponse]
+    total: int
+    total_monto_clp: float
+    total_monto_usd: float

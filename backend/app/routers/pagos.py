@@ -15,7 +15,7 @@ from app.auth import get_current_user
 from app.config import UPLOAD_DIR
 from app.database import get_db
 from app.models import Pago, ImagenPago, User
-from app.schemas import PagoCreate, PagoUpdate, PagoResponse, ImagenPagoResponse, ResumenResponse
+from app.schemas import PagoCreate, PagoUpdate, PagoResponse, ImagenPagoResponse, ResumenResponse, PagosListResponse
 
 _CHL_TZ = ZoneInfo("America/Santiago")
 
@@ -97,6 +97,7 @@ def get_resumen(db: Session = Depends(get_db)):
     ).scalar()
 
     cantidad_pendientes = db.query(func.count(Pago.id)).filter(Pago.estado == "PENDIENTE").scalar()
+    cantidad_no_pagados = db.query(func.count(Pago.id)).filter(Pago.estado.in_(["PENDIENTE", "SOLICITADO"])).scalar()
 
     return ResumenResponse(
         total_pendiente_reembolso=sum_by("REEMBOLSO", "PENDIENTE"),
@@ -105,16 +106,19 @@ def get_resumen(db: Session = Depends(get_db)):
         total_solicitado_provision=sum_by("PROVISION", "SOLICITADO"),
         total_pagado_mes=Decimal(str(total_pagado_mes)),
         cantidad_pendientes=cantidad_pendientes,
+        cantidad_no_pagados=cantidad_no_pagados,
     )
 
 
-@router.get("")
+@router.get("", response_model=PagosListResponse)
 def list_pagos(
     estado: str | None = Query(None),
     tipo: str | None = Query(None),
     proveedor: str | None = Query(None),
     desde: date | None = Query(None),
     hasta: date | None = Query(None),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(25, ge=1, le=200),
     db: Session = Depends(get_db),
 ):
     q = db.query(Pago)
@@ -128,8 +132,20 @@ def list_pagos(
         q = q.filter(Pago.fecha_pago >= desde)
     if hasta:
         q = q.filter(Pago.fecha_pago <= hasta)
-    pagos = q.order_by(Pago.fecha_pago.desc()).all()
-    return [PagoResponse.from_pago(p) for p in pagos]
+
+    total = q.with_entities(func.count(Pago.id)).scalar()
+    total_monto_clp = q.with_entities(func.coalesce(func.sum(Pago.monto_clp), 0)).scalar()
+    total_monto_usd = q.with_entities(
+        func.coalesce(func.sum(Pago.monto), 0)
+    ).filter(Pago.moneda == "USD").scalar()
+
+    pagos = q.order_by(Pago.fecha_pago.desc()).offset(skip).limit(limit).all()
+    return PagosListResponse(
+        items=[PagoResponse.from_pago(p) for p in pagos],
+        total=total,
+        total_monto_clp=float(total_monto_clp),
+        total_monto_usd=float(total_monto_usd),
+    )
 
 
 @router.get("/reporte")

@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   Typography, Table, TableHead, TableRow, TableCell, TableBody, Button, Chip,
   Dialog, DialogTitle, DialogContent, DialogActions, TextField, MenuItem,
-  IconButton, Box, Stack, Alert,
+  IconButton, Box, Stack, Alert, CircularProgress,
 } from '@mui/material';
 import { Add, Edit, Delete, Download, PictureAsPdf, Image as ImageIcon } from '@mui/icons-material';
 import api from '../api';
@@ -12,6 +12,7 @@ const estadoColor = { PENDIENTE: 'warning', SOLICITADO: 'info', PAGADO: 'success
 const TIPOS = ['REEMBOLSO', 'PROVISION'];
 const ESTADOS = ['PENDIENTE', 'SOLICITADO', 'PAGADO'];
 const MONEDAS = ['USD', 'EUR', 'MXN', 'ARS', 'COP', 'CLP'];
+const PAGE_SIZE = 25;
 
 const fechaChile = () =>
   new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santiago' }).format(new Date());
@@ -25,6 +26,9 @@ const emptyPago = {
 
 export default function Pagos() {
   const [pagos, setPagos] = useState([]);
+  const [hasMore, setHasMore] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [totales, setTotales] = useState({ clp: 0, usd: 0 });
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(emptyPago);
   const [editId, setEditId] = useState(null);
@@ -34,16 +38,70 @@ export default function Pagos() {
   const [newImagenesReembolso, setNewImagenesReembolso] = useState([]);
   const [existingImagenesCobro, setExistingImagenesCobro] = useState([]);
   const [existingImagenesReembolso, setExistingImagenesReembolso] = useState([]);
+  const sentinelRef = useRef(null);
+  const pagosRef = useRef([]);
 
-  const load = () => {
-    const params = {};
+  const buildParams = useCallback((skip = 0) => {
+    const params = { skip, limit: PAGE_SIZE };
     if (filters.estado) params.estado = filters.estado;
     if (filters.tipo) params.tipo = filters.tipo;
     if (filters.proveedor) params.proveedor = filters.proveedor;
-    api.get('/pagos', { params }).then((r) => setPagos(r.data));
-  };
+    return params;
+  }, [filters]);
 
-  useEffect(() => { load(); }, [filters]);
+  // Carga inicial (reset) al cambiar filtros
+  useEffect(() => {
+    let cancelled = false;
+    setPagos([]);
+    pagosRef.current = [];
+    setHasMore(true);
+    setTotales({ clp: 0, usd: 0 });
+
+    api.get('/pagos', { params: buildParams(0) }).then((r) => {
+      if (cancelled) return;
+      const data = r.data;
+      pagosRef.current = data.items;
+      setPagos(data.items);
+      setTotales({ clp: data.total_monto_clp, usd: data.total_monto_usd });
+      setHasMore(data.items.length < data.total);
+    });
+
+    return () => { cancelled = true; };
+  }, [filters, buildParams]);
+
+  const loadMore = useCallback(async () => {
+    if (isLoadingMore || !hasMore) return;
+    setIsLoadingMore(true);
+    try {
+      const r = await api.get('/pagos', { params: buildParams(pagosRef.current.length) });
+      const data = r.data;
+      const updated = [...pagosRef.current, ...data.items];
+      pagosRef.current = updated;
+      setPagos(updated);
+      setHasMore(updated.length < data.total);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [isLoadingMore, hasMore, buildParams]);
+
+  // IntersectionObserver para scroll infinito
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) loadMore();
+      },
+      { threshold: 0.1 }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [loadMore]);
+
+  const reload = () => {
+    // Fuerza re-ejecución del efecto de carga
+    setFilters((f) => ({ ...f }));
+  };
 
   const handleOpen = (pago = null) => {
     if (pago) {
@@ -116,7 +174,7 @@ export default function Pagos() {
       }
 
       setOpen(false);
-      load();
+      reload();
     } catch (err) {
       setError(err.response?.data?.detail || 'Error al guardar');
     }
@@ -125,7 +183,7 @@ export default function Pagos() {
   const handleDelete = async (id) => {
     if (!window.confirm('¿Eliminar este pago?')) return;
     await api.delete(`/pagos/${id}`);
-    load();
+    reload();
   };
 
   const handleEstadoChange = async (pago, nuevoEstado) => {
@@ -137,7 +195,7 @@ export default function Pagos() {
       updates.fecha_reembolso = fechaChile();
     }
     await api.put(`/pagos/${pago.id}`, updates);
-    load();
+    reload();
   };
 
   const handleDownloadArchivo = async (pagoId) => {
@@ -228,7 +286,7 @@ export default function Pagos() {
         <TextField label="Proveedor" size="small" value={filters.proveedor} onChange={(e) => setFilters({ ...filters, proveedor: e.target.value })} />
       </Stack>
 
-      <Table size="small">
+      <Table size="small" stickyHeader>
         <TableHead>
           <TableRow>
             <TableCell>Fecha</TableCell>
@@ -275,11 +333,29 @@ export default function Pagos() {
               </TableCell>
             </TableRow>
           ))}
-          {pagos.length === 0 && (
+          {pagos.length === 0 && !isLoadingMore && (
             <TableRow><TableCell colSpan={8} align="center">No hay pagos</TableCell></TableRow>
+          )}
+          {/* Fila de totales */}
+          {pagos.length > 0 && (
+            <TableRow sx={{ backgroundColor: 'action.hover', fontWeight: 'bold' }}>
+              <TableCell colSpan={3} sx={{ fontWeight: 'bold' }}>TOTALES</TableCell>
+              <TableCell align="right" sx={{ fontWeight: 'bold' }}>
+                {totales.usd.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
+              </TableCell>
+              <TableCell align="right" sx={{ fontWeight: 'bold' }}>
+                {totales.clp.toLocaleString('es-CL', { maximumFractionDigits: 0 })} CLP
+              </TableCell>
+              <TableCell colSpan={3} />
+            </TableRow>
           )}
         </TableBody>
       </Table>
+
+      {/* Sentinel para IntersectionObserver */}
+      <Box ref={sentinelRef} sx={{ height: 20, display: 'flex', justifyContent: 'center', alignItems: 'center', mt: 1 }}>
+        {isLoadingMore && <CircularProgress size={24} />}
+      </Box>
 
       <Dialog open={open} onClose={() => setOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>{editId ? 'Editar Pago' : 'Nuevo Pago'}</DialogTitle>
