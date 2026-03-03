@@ -17,6 +17,15 @@ const PAGE_SIZE = 25;
 const fechaChile = () =>
   new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santiago' }).format(new Date());
 
+const mesActualChile = () => {
+  const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santiago' }).format(new Date());
+  const [year, month] = hoy.split('-');
+  const desde = `${year}-${month}-01`;
+  const lastDay = new Date(Number(year), Number(month), 0).getDate();
+  const hasta = `${year}-${month}-${String(lastDay).padStart(2, '0')}`;
+  return { desde, hasta };
+};
+
 const emptyPago = {
   fecha_pago: '',
   concepto: '', proveedor: '', monto: '', moneda: 'USD', monto_clp: '',
@@ -33,7 +42,8 @@ export default function Pagos() {
   const [form, setForm] = useState(emptyPago);
   const [editId, setEditId] = useState(null);
   const [error, setError] = useState('');
-  const [filters, setFilters] = useState({ estado: '', tipo: '', proveedor: '' });
+  const { desde: desdeInicial, hasta: hastaInicial } = mesActualChile();
+  const [filters, setFilters] = useState({ estado: '', tipo: '', proveedor: '', desde: desdeInicial, hasta: hastaInicial });
   const [newImagenesCobro, setNewImagenesCobro] = useState([]);
   const [newImagenesReembolso, setNewImagenesReembolso] = useState([]);
   const [existingImagenesCobro, setExistingImagenesCobro] = useState([]);
@@ -46,6 +56,8 @@ export default function Pagos() {
     if (filters.estado) params.estado = filters.estado;
     if (filters.tipo) params.tipo = filters.tipo;
     if (filters.proveedor) params.proveedor = filters.proveedor;
+    if (filters.desde) params.desde = filters.desde;
+    if (filters.hasta) params.hasta = filters.hasta;
     return params;
   }, [filters]);
 
@@ -242,6 +254,8 @@ export default function Pagos() {
       if (filters.estado) params.estado = filters.estado;
       if (filters.tipo) params.tipo = filters.tipo;
       if (filters.proveedor) params.proveedor = filters.proveedor;
+      if (filters.desde) params.desde = filters.desde;
+      if (filters.hasta) params.hasta = filters.hasta;
       const res = await api.get('/pagos/reporte', { params, responseType: 'blob' });
       const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
       const link = document.createElement('a');
@@ -274,7 +288,17 @@ export default function Pagos() {
         </Stack>
       </Box>
 
-      <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
+      <Stack direction="row" spacing={2} sx={{ mb: 2 }} flexWrap="wrap">
+        <TextField
+          label="Desde" type="date" size="small" value={filters.desde}
+          onChange={(e) => setFilters({ ...filters, desde: e.target.value })}
+          InputLabelProps={{ shrink: true }} sx={{ minWidth: 150 }}
+        />
+        <TextField
+          label="Hasta" type="date" size="small" value={filters.hasta}
+          onChange={(e) => setFilters({ ...filters, hasta: e.target.value })}
+          InputLabelProps={{ shrink: true }} sx={{ minWidth: 150 }}
+        />
         <TextField select label="Estado" size="small" value={filters.estado} onChange={(e) => setFilters({ ...filters, estado: e.target.value })} sx={{ minWidth: 140 }}>
           <MenuItem value="">Todos</MenuItem>
           {ESTADOS.map((e) => <MenuItem key={e} value={e}>{e}</MenuItem>)}
