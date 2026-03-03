@@ -54,7 +54,7 @@ export default function Pagos() {
     let cancelled = false;
     setPagos([]);
     pagosRef.current = [];
-    setHasMore(true);
+    setHasMore(false);
     setTotales({ clp: 0, usd: 0 });
 
     api.get('/pagos', { params: buildParams(0) }).then((r) => {
