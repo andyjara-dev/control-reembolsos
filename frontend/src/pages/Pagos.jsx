@@ -340,10 +340,10 @@ export default function Pagos() {
           {pagos.length > 0 && (
             <TableRow sx={{ backgroundColor: 'action.hover', fontWeight: 'bold' }}>
               <TableCell colSpan={3} sx={{ fontWeight: 'bold' }}>TOTALES</TableCell>
-              <TableCell align="right" sx={{ fontWeight: 'bold' }}>
+              <TableCell align="right" sx={{ fontWeight: 'bold', whiteSpace: 'nowrap', minWidth: 130 }}>
                 {totales.usd.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
               </TableCell>
-              <TableCell align="right" sx={{ fontWeight: 'bold' }}>
+              <TableCell align="right" sx={{ fontWeight: 'bold', whiteSpace: 'nowrap', minWidth: 140 }}>
                 {totales.clp.toLocaleString('es-CL', { maximumFractionDigits: 0 })} CLP
               </TableCell>
               <TableCell colSpan={3} />
