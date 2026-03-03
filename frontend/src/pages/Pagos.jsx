@@ -4,7 +4,7 @@ import {
   Dialog, DialogTitle, DialogContent, DialogActions, TextField, MenuItem,
   IconButton, Box, Stack, Alert, CircularProgress,
 } from '@mui/material';
-import { Add, Edit, Delete, Download, PictureAsPdf, Image as ImageIcon } from '@mui/icons-material';
+import { Add, Edit, Delete, Download, PictureAsPdf, Image as ImageIcon, Close } from '@mui/icons-material';
 import api from '../api';
 import MultiImageDropZone from '../components/MultiImageDropZone';
 
@@ -357,8 +357,13 @@ export default function Pagos() {
         {isLoadingMore && <CircularProgress size={24} />}
       </Box>
 
-      <Dialog open={open} onClose={() => setOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>{editId ? 'Editar Pago' : 'Nuevo Pago'}</DialogTitle>
+      <Dialog open={open} onClose={(_, reason) => { if (reason !== 'backdropClick' && reason !== 'escapeKeyDown') setOpen(false); }} maxWidth="sm" fullWidth disableEscapeKeyDown>
+        <DialogTitle sx={{ pr: 6 }}>
+          {editId ? 'Editar Pago' : 'Nuevo Pago'}
+          <IconButton size="small" onClick={() => setOpen(false)} sx={{ position: 'absolute', right: 12, top: 12 }}>
+            <Close fontSize="small" />
+          </IconButton>
+        </DialogTitle>
         <DialogContent>
           {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
           <Stack spacing={2} sx={{ mt: 1 }}>
