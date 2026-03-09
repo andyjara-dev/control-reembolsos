@@ -14,6 +14,15 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
 
 
+class ConfiguracionItem(BaseModel):
+    clave: str
+    valor: str | None = None
+
+
+class SolicitarRequest(BaseModel):
+    email_destinatario: str
+
+
 class PagoBase(BaseModel):
     fecha_pago: date
     concepto: str
@@ -30,6 +39,7 @@ class PagoBase(BaseModel):
     imagen_cobro: str | None = None
     imagen_reembolso: str | None = None
     notas: str | None = None
+    email_destinatario: str | None = None
 
 
 class PagoCreate(PagoBase):
@@ -51,6 +61,7 @@ class PagoUpdate(BaseModel):
     imagen_cobro: str | None = None
     imagen_reembolso: str | None = None
     notas: str | None = None
+    email_destinatario: str | None = None
 
 
 class ImagenPagoResponse(BaseModel):

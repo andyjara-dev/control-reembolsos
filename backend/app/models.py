@@ -7,6 +7,13 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
 
+class Configuracion(Base):
+    __tablename__ = "configuracion"
+
+    clave: Mapped[str] = mapped_column(String(100), primary_key=True)
+    valor: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -34,6 +41,7 @@ class Pago(Base):
     imagen_cobro: Mapped[str | None] = mapped_column(String(255), nullable=True)
     imagen_reembolso: Mapped[str | None] = mapped_column(String(255), nullable=True)
     notas: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    email_destinatario: Mapped[str | None] = mapped_column(String(254), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 

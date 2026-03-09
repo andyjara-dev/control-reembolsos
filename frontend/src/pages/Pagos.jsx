@@ -4,7 +4,7 @@ import {
   Dialog, DialogTitle, DialogContent, DialogActions, TextField, MenuItem,
   IconButton, Box, Stack, Alert, CircularProgress,
 } from '@mui/material';
-import { Add, Edit, Delete, Download, PictureAsPdf, Image as ImageIcon, Close } from '@mui/icons-material';
+import { Add, Edit, Delete, Download, PictureAsPdf, Image as ImageIcon, Close, Send } from '@mui/icons-material';
 import api from '../api';
 import MultiImageDropZone from '../components/MultiImageDropZone';
 
@@ -46,6 +46,11 @@ export default function Pagos() {
   const [filters, setFilters] = useState({ estado: '', tipo: '', proveedor: '', desde: desdeInicial, hasta: hastaInicial });
   const [newImagenesCobro, setNewImagenesCobro] = useState([]);
   const [newImagenesReembolso, setNewImagenesReembolso] = useState([]);
+  const [solicitarOpen, setSolicitarOpen] = useState(false);
+  const [solicitarPago, setSolicitarPago] = useState(null);
+  const [solicitarEmail, setSolicitarEmail] = useState('');
+  const [solicitarLoading, setSolicitarLoading] = useState(false);
+  const [solicitarError, setSolicitarError] = useState('');
   const [existingImagenesCobro, setExistingImagenesCobro] = useState([]);
   const [existingImagenesReembolso, setExistingImagenesReembolso] = useState([]);
   const sentinelRef = useRef(null);
@@ -270,6 +275,31 @@ export default function Pagos() {
     }
   };
 
+  const handleAbrirSolicitar = (pago) => {
+    setSolicitarPago(pago);
+    setSolicitarEmail(pago.email_destinatario || '');
+    setSolicitarError('');
+    setSolicitarOpen(true);
+  };
+
+  const handleSolicitarConfirm = async () => {
+    if (!solicitarEmail) {
+      setSolicitarError('Ingresa el email del destinatario');
+      return;
+    }
+    setSolicitarLoading(true);
+    setSolicitarError('');
+    try {
+      await api.post(`/pagos/${solicitarPago.id}/solicitar`, { email_destinatario: solicitarEmail });
+      setSolicitarOpen(false);
+      reload();
+    } catch (err) {
+      setSolicitarError(err.response?.data?.detail || 'Error al enviar la solicitud');
+    } finally {
+      setSolicitarLoading(false);
+    }
+  };
+
   const nextEstado = (estado) => {
     if (estado === 'PENDIENTE') return 'SOLICITADO';
     if (estado === 'SOLICITADO') return 'PAGADO';
@@ -339,6 +369,17 @@ export default function Pagos() {
                     → {nextEstado(p.estado)}
                   </Button>
                 )}
+                {p.estado === 'PENDIENTE' && (
+                  <IconButton
+                    size="small"
+                    color="info"
+                    sx={{ ml: 0.5 }}
+                    title="Solicitar al destinatario (envía email con PDF)"
+                    onClick={() => handleAbrirSolicitar(p)}
+                  >
+                    <Send fontSize="small" />
+                  </IconButton>
+                )}
               </TableCell>
               <TableCell>
                 <IconButton size="small" onClick={() => handleOpen(p)}><Edit fontSize="small" /></IconButton>
@@ -380,6 +421,42 @@ export default function Pagos() {
       <Box ref={sentinelRef} sx={{ height: 20, display: 'flex', justifyContent: 'center', alignItems: 'center', mt: 1 }}>
         {isLoadingMore && <CircularProgress size={24} />}
       </Box>
+
+      {/* Dialog: Solicitar al destinatario */}
+      <Dialog open={solicitarOpen} onClose={() => setSolicitarOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Solicitar al destinatario</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            {solicitarError && <Alert severity="error">{solicitarError}</Alert>}
+            {solicitarPago && (
+              <Alert severity="info" sx={{ fontSize: 13 }}>
+                <strong>{solicitarPago.concepto}</strong> — {solicitarPago.proveedor}<br />
+                {Number(solicitarPago.monto).toFixed(2)} {solicitarPago.moneda}
+              </Alert>
+            )}
+            <TextField
+              label="Email del destinatario"
+              type="email"
+              value={solicitarEmail}
+              onChange={(e) => setSolicitarEmail(e.target.value)}
+              helperText="Se enviará el PDF adjunto. Recibirás una copia en el email configurado en Ajustes."
+              fullWidth
+              autoFocus
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSolicitarOpen(false)} disabled={solicitarLoading}>Cancelar</Button>
+          <Button
+            variant="contained"
+            startIcon={solicitarLoading ? <CircularProgress size={16} /> : <Send />}
+            onClick={handleSolicitarConfirm}
+            disabled={solicitarLoading}
+          >
+            Enviar solicitud
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={open} onClose={(_, reason) => { if (reason !== 'backdropClick' && reason !== 'escapeKeyDown') setOpen(false); }} maxWidth="sm" fullWidth disableEscapeKeyDown>
         <DialogTitle sx={{ pr: 6 }}>

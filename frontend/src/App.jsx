@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Pagos from './pages/Pagos';
+import Ajustes from './pages/Ajustes';
 import {
   AppBar, Toolbar, Typography, Button, Box, Container,
   Dialog, DialogTitle, DialogContent, DialogActions,
@@ -103,6 +104,7 @@ function Layout() {
           </Typography>
           <Button color="inherit" component={RouterLink} to="/">Dashboard</Button>
           <Button color="inherit" component={RouterLink} to="/pagos">Pagos</Button>
+          <Button color="inherit" component={RouterLink} to="/ajustes">Ajustes</Button>
           <Button color="inherit" onClick={() => setPwdOpen(true)}>Contraseña</Button>
           <Button color="inherit" onClick={logout}>Salir</Button>
         </Toolbar>
@@ -111,6 +113,7 @@ function Layout() {
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/pagos" element={<Pagos />} />
+          <Route path="/ajustes" element={<Ajustes />} />
         </Routes>
       </Container>
       <CambiarPasswordModal open={pwdOpen} onClose={() => setPwdOpen(false)} />

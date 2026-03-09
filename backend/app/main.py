@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import engine, Base
-from app.routers import auth, pagos
+from app.routers import auth, pagos, configuracion
 
 Base.metadata.create_all(bind=engine)
 
@@ -12,6 +12,7 @@ with engine.connect() as conn:
     for col_def in [
         "ALTER TABLE pagos ADD COLUMN monto_clp NUMERIC(12, 0)",
         "ALTER TABLE pagos ADD COLUMN archivo_comprobante VARCHAR(255)",
+        "ALTER TABLE pagos ADD COLUMN email_destinatario VARCHAR(254)",
     ]:
         try:
             conn.execute(text(col_def))
@@ -58,6 +59,7 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(pagos.router)
+app.include_router(configuracion.router)
 
 
 @app.get("/api/health")
