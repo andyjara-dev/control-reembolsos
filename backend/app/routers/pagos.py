@@ -255,7 +255,8 @@ def generar_pdf_individual(pago_id: int, db: Session = Depends(get_db)):
     if not pago:
         raise HTTPException(status_code=404, detail="Pago no encontrado")
 
-    pdf_bytes = generar_pdf_bytes(pago, db)
+    config = {c.clave: c.valor for c in db.query(Configuracion).all()}
+    pdf_bytes = generar_pdf_bytes(pago, db, config)
     filename = f"solicitud_{pago.tipo.lower()}_{pago_id}.pdf"
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
@@ -284,7 +285,7 @@ def solicitar_pago(pago_id: int, data: SolicitarRequest, db: Session = Depends(g
     config = {c.clave: c.valor for c in db.query(Configuracion).all()}
 
     try:
-        pdf_bytes = generar_pdf_bytes(pago, db)
+        pdf_bytes = generar_pdf_bytes(pago, db, config)
         enviar_solicitud(
             pago,
             data.email_destinatario,

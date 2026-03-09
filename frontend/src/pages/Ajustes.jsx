@@ -7,6 +7,7 @@ import api from '../api';
 
 const CLAVES = [
   'resend_api_key',
+  'nombre_remitente',
   'email_from',
   'email_copia',
   'email_asunto_template',
@@ -15,6 +16,7 @@ const CLAVES = [
 
 const DEFAULTS = {
   resend_api_key: '',
+  nombre_remitente: '',
   email_from: '',
   email_copia: '',
   email_asunto_template: 'Solicitud de $tipo - $concepto ($proveedor)',
@@ -80,6 +82,15 @@ export default function Ajustes() {
             value={config.resend_api_key}
             onChange={set('resend_api_key')}
             helperText='Si muestra "***" ya está configurada. Limpiar e ingresar nueva clave para actualizar.'
+            fullWidth
+          />
+
+          <TextField
+            label="Nombre remitente"
+            value={config.nombre_remitente}
+            onChange={set('nombre_remitente')}
+            placeholder="Andy Jara M. — Consultor"
+            helperText='Aparece en el header del PDF y del email. Variable $nombre_remitente disponible en las plantillas.'
             fullWidth
           />
 

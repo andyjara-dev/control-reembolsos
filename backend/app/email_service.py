@@ -28,7 +28,7 @@ DEFAULT_CUERPO = """\
 <body style="font-family: Arial, sans-serif; color: #2c2c2c; max-width: 620px; margin: 0 auto;">
   <div style="background: #036b89; padding: 24px 20px; border-radius: 4px 4px 0 0;">
     <h2 style="color: white; margin: 0; font-size: 20px;">Solicitud de $tipo</h2>
-    <p style="color: #FFB236; margin: 6px 0 0; font-size: 14px;">Andy Jara M. &mdash; Consultor</p>
+    <p style="color: #FFB236; margin: 6px 0 0; font-size: 14px;">$nombre_remitente</p>
   </div>
   <div style="border: 1px solid #b0d9e4; border-top: none; padding: 20px; border-radius: 0 0 4px 4px;">
     <p style="margin: 0 0 16px; font-size: 14px;">Estimado/a <strong>$nombre_destinatario</strong>,</p>
@@ -114,7 +114,7 @@ def _get_pdf_fonts() -> dict:
         }
 
 
-def generar_pdf_bytes(pago: Pago, db) -> bytes:
+def generar_pdf_bytes(pago: Pago, db, config: dict | None = None) -> bytes:
     from reportlab.lib import colors
     from reportlab.lib.enums import TA_CENTER
     from reportlab.lib.pagesizes import letter
@@ -168,7 +168,7 @@ def generar_pdf_bytes(pago: Pago, db) -> bytes:
                 "MainH", fontName=fonts["header"], fontSize=18,
                 textColor=C["white"], alignment=TA_CENTER,
             ))],
-            [Paragraph("Andy Jara M.", ParagraphStyle(
+            [Paragraph((config or {}).get("nombre_remitente") or "Andy Jara M. — Consultor", ParagraphStyle(
                 "SubH", fontName=fonts["header_it"], fontSize=13,
                 textColor=C["gold"], alignment=TA_CENTER,
             ))],
@@ -302,7 +302,7 @@ def _fmt_cl(val, decimals: int = 2) -> str:
     return s
 
 
-def _build_variables(pago: Pago, nombre_destinatario: str = "") -> dict:
+def _build_variables(pago: Pago, nombre_destinatario: str = "", nombre_remitente: str = "") -> dict:
     return {
         "tipo":                 pago.tipo or "",
         "concepto":             pago.concepto or "",
@@ -314,6 +314,7 @@ def _build_variables(pago: Pago, nombre_destinatario: str = "") -> dict:
         "comprobante":          pago.comprobante or "-",
         "notas":                pago.notas or "-",
         "nombre_destinatario":  nombre_destinatario or "",
+        "nombre_remitente":     nombre_remitente or "Andy Jara M. — Consultor",
     }
 
 
@@ -321,7 +322,8 @@ def renderizar_solicitud(pago: Pago, config: dict, nombre_destinatario: str = ""
     """Renderiza el asunto y cuerpo HTML con las variables del pago. Retorna {asunto, cuerpo_html}."""
     asunto_tmpl = config.get("email_asunto_template") or DEFAULT_ASUNTO
     cuerpo_tmpl = config.get("email_cuerpo_template") or DEFAULT_CUERPO
-    variables = _build_variables(pago, nombre_destinatario)
+    nombre_remitente = config.get("nombre_remitente") or ""
+    variables = _build_variables(pago, nombre_destinatario, nombre_remitente)
     return {
         "asunto":     string.Template(asunto_tmpl).safe_substitute(variables),
         "cuerpo_html": string.Template(cuerpo_tmpl).safe_substitute(variables),
