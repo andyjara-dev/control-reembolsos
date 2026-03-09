@@ -31,6 +31,8 @@ DEFAULT_CUERPO = """\
     <p style="color: #FFB236; margin: 6px 0 0; font-size: 14px;">Andy Jara M. &mdash; Consultor</p>
   </div>
   <div style="border: 1px solid #b0d9e4; border-top: none; padding: 20px; border-radius: 0 0 4px 4px;">
+    <p style="margin: 0 0 16px; font-size: 14px;">Estimado/a <strong>$nombre_destinatario</strong>,</p>
+    <p style="margin: 0 0 16px; font-size: 14px;">Le envío adjunto la solicitud de $tipo correspondiente al siguiente gasto:</p>
     <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
       <tr style="background: #fff8ed;">
         <td style="padding: 9px 14px; font-weight: bold; color: #036b89; width: 38%;">Concepto</td>
@@ -293,42 +295,66 @@ def generar_pdf_bytes(pago: Pago, db) -> bytes:
     return buffer.read()
 
 
-def enviar_solicitud(pago: Pago, email_destinatario: str, pdf_bytes: bytes, config: dict) -> None:
+def _build_variables(pago: Pago, nombre_destinatario: str = "") -> dict:
+    return {
+        "tipo":                 pago.tipo or "",
+        "concepto":             pago.concepto or "",
+        "proveedor":            pago.proveedor or "",
+        "monto":                f"{pago.monto:,.2f}" if pago.monto else "-",
+        "moneda":               pago.moneda or "",
+        "monto_clp":            f"{pago.monto_clp:,.0f} CLP" if pago.monto_clp else "-",
+        "fecha_pago":           pago.fecha_pago.strftime("%d/%m/%Y") if pago.fecha_pago else "-",
+        "comprobante":          pago.comprobante or "-",
+        "notas":                pago.notas or "-",
+        "nombre_destinatario":  nombre_destinatario or "",
+    }
+
+
+def renderizar_solicitud(pago: Pago, config: dict, nombre_destinatario: str = "") -> dict:
+    """Renderiza el asunto y cuerpo HTML con las variables del pago. Retorna {asunto, cuerpo_html}."""
+    asunto_tmpl = config.get("email_asunto_template") or DEFAULT_ASUNTO
+    cuerpo_tmpl = config.get("email_cuerpo_template") or DEFAULT_CUERPO
+    variables = _build_variables(pago, nombre_destinatario)
+    return {
+        "asunto":     string.Template(asunto_tmpl).safe_substitute(variables),
+        "cuerpo_html": string.Template(cuerpo_tmpl).safe_substitute(variables),
+    }
+
+
+def enviar_solicitud(
+    pago: Pago,
+    email_destinatario: str,
+    pdf_bytes: bytes,
+    config: dict,
+    nombre_destinatario: str | None = None,
+    asunto: str | None = None,
+    cuerpo_html: str | None = None,
+) -> None:
     import resend
 
     api_key = config.get("resend_api_key") or ""
     if not api_key:
-        raise ValueError(
-            "Resend API Key no configurada. Ve a Ajustes para configurarla."
-        )
+        raise ValueError("Resend API Key no configurada. Ve a Ajustes para configurarla.")
 
     email_from = config.get("email_from") or "Control Reembolsos <noreply@resend.dev>"
     email_copia = config.get("email_copia") or ""
-    asunto_tmpl = config.get("email_asunto_template") or DEFAULT_ASUNTO
-    cuerpo_tmpl = config.get("email_cuerpo_template") or DEFAULT_CUERPO
 
-    variables = {
-        "tipo":        pago.tipo or "",
-        "concepto":    pago.concepto or "",
-        "proveedor":   pago.proveedor or "",
-        "monto":       f"{pago.monto:,.2f}" if pago.monto else "-",
-        "moneda":      pago.moneda or "",
-        "monto_clp":   f"{pago.monto_clp:,.0f} CLP" if pago.monto_clp else "-",
-        "fecha_pago":  pago.fecha_pago.strftime("%d/%m/%Y") if pago.fecha_pago else "-",
-        "comprobante": pago.comprobante or "-",
-        "notas":       pago.notas or "-",
-    }
+    # Usar contenido pre-renderizado si el usuario lo editó; si no, renderizar desde plantilla
+    if not asunto or not cuerpo_html:
+        rendered = renderizar_solicitud(pago, config, nombre_destinatario or "")
+        asunto = asunto or rendered["asunto"]
+        cuerpo_html = cuerpo_html or rendered["cuerpo_html"]
 
-    asunto = string.Template(asunto_tmpl).safe_substitute(variables)
-    cuerpo = string.Template(cuerpo_tmpl).safe_substitute(variables)
+    # Formatear el To con nombre si está disponible
+    to_field = f"{nombre_destinatario} <{email_destinatario}>" if nombre_destinatario else email_destinatario
 
     resend.api_key = api_key
 
     params: resend.Emails.SendParams = {
         "from": email_from,
-        "to": [email_destinatario],
+        "to": [to_field],
         "subject": asunto,
-        "html": cuerpo,
+        "html": cuerpo_html,
         "attachments": [
             {
                 "filename": f"solicitud_{pago.tipo.lower()}_{pago.id}.pdf",

@@ -42,6 +42,7 @@ class Pago(Base):
     imagen_reembolso: Mapped[str | None] = mapped_column(String(255), nullable=True)
     notas: Mapped[str | None] = mapped_column(String(500), nullable=True)
     email_destinatario: Mapped[str | None] = mapped_column(String(254), nullable=True)
+    nombre_destinatario: Mapped[str | None] = mapped_column(String(200), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 

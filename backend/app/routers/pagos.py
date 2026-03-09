@@ -14,9 +14,9 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_user
 from app.config import UPLOAD_DIR
 from app.database import get_db
-from app.email_service import _PDF_COLORS, _get_pdf_fonts, generar_pdf_bytes, enviar_solicitud
+from app.email_service import _PDF_COLORS, _get_pdf_fonts, generar_pdf_bytes, enviar_solicitud, renderizar_solicitud
 from app.models import Configuracion, Pago, ImagenPago, User
-from app.schemas import PagoCreate, PagoUpdate, PagoResponse, ImagenPagoResponse, ResumenResponse, PagosListResponse, SolicitarRequest
+from app.schemas import PagoCreate, PagoUpdate, PagoResponse, ImagenPagoResponse, ResumenResponse, PagosListResponse, SolicitarRequest, PreviewSolicitarResponse
 
 _CHL_TZ = ZoneInfo("America/Santiago")
 
@@ -264,6 +264,15 @@ def generar_pdf_individual(pago_id: int, db: Session = Depends(get_db)):
     )
 
 
+@router.get("/{pago_id}/solicitar/preview", response_model=PreviewSolicitarResponse)
+def preview_solicitar(pago_id: int, nombre: str = Query(""), db: Session = Depends(get_db)):
+    pago = db.query(Pago).filter(Pago.id == pago_id).first()
+    if not pago:
+        raise HTTPException(status_code=404, detail="Pago no encontrado")
+    config = {c.clave: c.valor for c in db.query(Configuracion).all()}
+    return renderizar_solicitud(pago, config, nombre)
+
+
 @router.post("/{pago_id}/solicitar")
 def solicitar_pago(pago_id: int, data: SolicitarRequest, db: Session = Depends(get_db)):
     pago = db.query(Pago).filter(Pago.id == pago_id).first()
@@ -276,7 +285,15 @@ def solicitar_pago(pago_id: int, data: SolicitarRequest, db: Session = Depends(g
 
     try:
         pdf_bytes = generar_pdf_bytes(pago, db)
-        enviar_solicitud(pago, data.email_destinatario, pdf_bytes, config)
+        enviar_solicitud(
+            pago,
+            data.email_destinatario,
+            pdf_bytes,
+            config,
+            nombre_destinatario=data.nombre_destinatario,
+            asunto=data.asunto,
+            cuerpo_html=data.cuerpo_html,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
@@ -285,6 +302,7 @@ def solicitar_pago(pago_id: int, data: SolicitarRequest, db: Session = Depends(g
     pago.estado = "SOLICITADO"
     pago.fecha_solicitud = datetime.now(tz=_CHL_TZ).date()
     pago.email_destinatario = data.email_destinatario
+    pago.nombre_destinatario = data.nombre_destinatario
     pago.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(pago)

@@ -2,9 +2,9 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   Typography, Table, TableHead, TableRow, TableCell, TableBody, Button, Chip,
   Dialog, DialogTitle, DialogContent, DialogActions, TextField, MenuItem,
-  IconButton, Box, Stack, Alert, CircularProgress,
+  IconButton, Box, Stack, Alert, CircularProgress, Tabs, Tab, Divider,
 } from '@mui/material';
-import { Add, Edit, Delete, Download, PictureAsPdf, Image as ImageIcon, Close, Send } from '@mui/icons-material';
+import { Add, Edit, Delete, Download, PictureAsPdf, Image as ImageIcon, Close, Send, Refresh } from '@mui/icons-material';
 import api from '../api';
 import MultiImageDropZone from '../components/MultiImageDropZone';
 
@@ -49,6 +49,11 @@ export default function Pagos() {
   const [solicitarOpen, setSolicitarOpen] = useState(false);
   const [solicitarPago, setSolicitarPago] = useState(null);
   const [solicitarEmail, setSolicitarEmail] = useState('');
+  const [solicitarNombre, setSolicitarNombre] = useState('');
+  const [solicitarAsunto, setSolicitarAsunto] = useState('');
+  const [solicitarCuerpo, setSolicitarCuerpo] = useState('');
+  const [solicitarTab, setSolicitarTab] = useState(0);
+  const [solicitarLoadingPreview, setSolicitarLoadingPreview] = useState(false);
   const [solicitarLoading, setSolicitarLoading] = useState(false);
   const [solicitarError, setSolicitarError] = useState('');
   const [existingImagenesCobro, setExistingImagenesCobro] = useState([]);
@@ -275,12 +280,32 @@ export default function Pagos() {
     }
   };
 
-  const handleAbrirSolicitar = (pago) => {
+  const cargarPreview = async (pago, nombre) => {
+    setSolicitarLoadingPreview(true);
+    try {
+      const r = await api.get(`/pagos/${pago.id}/solicitar/preview`, { params: { nombre: nombre || '' } });
+      setSolicitarAsunto(r.data.asunto);
+      setSolicitarCuerpo(r.data.cuerpo_html);
+    } catch {
+      setSolicitarError('Error al cargar la vista previa del email');
+    } finally {
+      setSolicitarLoadingPreview(false);
+    }
+  };
+
+  const handleAbrirSolicitar = async (pago) => {
     setSolicitarPago(pago);
     setSolicitarEmail(pago.email_destinatario || '');
+    setSolicitarNombre(pago.nombre_destinatario || '');
+    setSolicitarAsunto('');
+    setSolicitarCuerpo('');
+    setSolicitarTab(0);
     setSolicitarError('');
     setSolicitarOpen(true);
+    await cargarPreview(pago, pago.nombre_destinatario || '');
   };
+
+  const handleRegenerarPreview = () => cargarPreview(solicitarPago, solicitarNombre);
 
   const handleSolicitarConfirm = async () => {
     if (!solicitarEmail) {
@@ -290,7 +315,12 @@ export default function Pagos() {
     setSolicitarLoading(true);
     setSolicitarError('');
     try {
-      await api.post(`/pagos/${solicitarPago.id}/solicitar`, { email_destinatario: solicitarEmail });
+      await api.post(`/pagos/${solicitarPago.id}/solicitar`, {
+        email_destinatario: solicitarEmail,
+        nombre_destinatario: solicitarNombre || null,
+        asunto: solicitarAsunto || null,
+        cuerpo_html: solicitarCuerpo || null,
+      });
       setSolicitarOpen(false);
       reload();
     } catch (err) {
@@ -423,26 +453,87 @@ export default function Pagos() {
       </Box>
 
       {/* Dialog: Solicitar al destinatario */}
-      <Dialog open={solicitarOpen} onClose={() => setSolicitarOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>Solicitar al destinatario</DialogTitle>
+      <Dialog open={solicitarOpen} onClose={() => setSolicitarOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle sx={{ pr: 6 }}>
+          Solicitar al destinatario
+          <IconButton size="small" onClick={() => setSolicitarOpen(false)} sx={{ position: 'absolute', right: 12, top: 12 }}>
+            <Close fontSize="small" />
+          </IconButton>
+        </DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
             {solicitarError && <Alert severity="error">{solicitarError}</Alert>}
             {solicitarPago && (
               <Alert severity="info" sx={{ fontSize: 13 }}>
-                <strong>{solicitarPago.concepto}</strong> — {solicitarPago.proveedor}<br />
+                <strong>{solicitarPago.concepto}</strong> — {solicitarPago.proveedor} —{' '}
                 {Number(solicitarPago.monto).toFixed(2)} {solicitarPago.moneda}
               </Alert>
             )}
+
+            {/* Destinatario */}
+            <Stack direction="row" spacing={2}>
+              <TextField
+                label="Email destinatario"
+                type="email"
+                value={solicitarEmail}
+                onChange={(e) => setSolicitarEmail(e.target.value)}
+                required
+                sx={{ flex: 1 }}
+                autoFocus
+              />
+              <TextField
+                label="Nombre destinatario"
+                value={solicitarNombre}
+                onChange={(e) => setSolicitarNombre(e.target.value)}
+                sx={{ flex: 1 }}
+                InputProps={{
+                  endAdornment: (
+                    <IconButton size="small" onClick={handleRegenerarPreview} title="Regenerar preview con este nombre" disabled={solicitarLoadingPreview}>
+                      <Refresh fontSize="small" />
+                    </IconButton>
+                  ),
+                }}
+              />
+            </Stack>
+
+            <Divider />
+
+            {/* Asunto */}
             <TextField
-              label="Email del destinatario"
-              type="email"
-              value={solicitarEmail}
-              onChange={(e) => setSolicitarEmail(e.target.value)}
-              helperText="Se enviará el PDF adjunto. Recibirás una copia en el email configurado en Ajustes."
+              label="Asunto"
+              value={solicitarAsunto}
+              onChange={(e) => setSolicitarAsunto(e.target.value)}
               fullWidth
-              autoFocus
+              disabled={solicitarLoadingPreview}
             />
+
+            {/* Cuerpo con tabs editar/preview */}
+            <Box>
+              <Tabs value={solicitarTab} onChange={(_, v) => setSolicitarTab(v)} sx={{ mb: 1, borderBottom: 1, borderColor: 'divider' }}>
+                <Tab label="Editar HTML" />
+                <Tab label="Vista previa" />
+              </Tabs>
+
+              {solicitarLoadingPreview ? (
+                <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                  <CircularProgress />
+                </Box>
+              ) : solicitarTab === 0 ? (
+                <TextField
+                  multiline
+                  rows={14}
+                  value={solicitarCuerpo}
+                  onChange={(e) => setSolicitarCuerpo(e.target.value)}
+                  fullWidth
+                  inputProps={{ style: { fontFamily: 'monospace', fontSize: 12 } }}
+                />
+              ) : (
+                <Box
+                  sx={{ border: '1px solid #ddd', borderRadius: 1, p: 2, minHeight: 200, bgcolor: 'white', overflow: 'auto' }}
+                  dangerouslySetInnerHTML={{ __html: solicitarCuerpo }}
+                />
+              )}
+            </Box>
           </Stack>
         </DialogContent>
         <DialogActions>
@@ -451,7 +542,7 @@ export default function Pagos() {
             variant="contained"
             startIcon={solicitarLoading ? <CircularProgress size={16} /> : <Send />}
             onClick={handleSolicitarConfirm}
-            disabled={solicitarLoading}
+            disabled={solicitarLoading || solicitarLoadingPreview}
           >
             Enviar solicitud
           </Button>

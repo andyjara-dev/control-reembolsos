@@ -13,6 +13,7 @@ with engine.connect() as conn:
         "ALTER TABLE pagos ADD COLUMN monto_clp NUMERIC(12, 0)",
         "ALTER TABLE pagos ADD COLUMN archivo_comprobante VARCHAR(255)",
         "ALTER TABLE pagos ADD COLUMN email_destinatario VARCHAR(254)",
+        "ALTER TABLE pagos ADD COLUMN nombre_destinatario VARCHAR(200)",
     ]:
         try:
             conn.execute(text(col_def))

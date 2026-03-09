@@ -21,6 +21,14 @@ class ConfiguracionItem(BaseModel):
 
 class SolicitarRequest(BaseModel):
     email_destinatario: str
+    nombre_destinatario: str | None = None
+    asunto: str | None = None
+    cuerpo_html: str | None = None
+
+
+class PreviewSolicitarResponse(BaseModel):
+    asunto: str
+    cuerpo_html: str
 
 
 class PagoBase(BaseModel):
@@ -40,6 +48,7 @@ class PagoBase(BaseModel):
     imagen_reembolso: str | None = None
     notas: str | None = None
     email_destinatario: str | None = None
+    nombre_destinatario: str | None = None
 
 
 class PagoCreate(PagoBase):
@@ -62,6 +71,7 @@ class PagoUpdate(BaseModel):
     imagen_reembolso: str | None = None
     notas: str | None = None
     email_destinatario: str | None = None
+    nombre_destinatario: str | None = None
 
 
 class ImagenPagoResponse(BaseModel):
