@@ -295,14 +295,21 @@ def generar_pdf_bytes(pago: Pago, db) -> bytes:
     return buffer.read()
 
 
+def _fmt_cl(val, decimals: int = 2) -> str:
+    """Formato número chileno: separador miles=punto, decimal=coma. Ej: 1.234,56"""
+    s = f"{val:,.{decimals}f}"          # "1,234.56" o "1,234,567"
+    s = s.replace(",", "X").replace(".", ",").replace("X", ".")
+    return s
+
+
 def _build_variables(pago: Pago, nombre_destinatario: str = "") -> dict:
     return {
         "tipo":                 pago.tipo or "",
         "concepto":             pago.concepto or "",
         "proveedor":            pago.proveedor or "",
-        "monto":                f"{pago.monto:,.2f}" if pago.monto else "-",
+        "monto":                _fmt_cl(pago.monto, 2) if pago.monto else "-",
         "moneda":               pago.moneda or "",
-        "monto_clp":            f"{pago.monto_clp:,.0f} CLP" if pago.monto_clp else "-",
+        "monto_clp":            f"{_fmt_cl(pago.monto_clp, 0)} CLP" if pago.monto_clp else "-",
         "fecha_pago":           pago.fecha_pago.strftime("%d/%m/%Y") if pago.fecha_pago else "-",
         "comprobante":          pago.comprobante or "-",
         "notas":                pago.notas or "-",
