@@ -379,8 +379,8 @@ export default function Pagos() {
     setReporteOpen(true);
     try {
       const [r1, r2] = await Promise.all([
-        api.get('/pagos', { params: { estado: 'PENDIENTE', limit: 500 } }),
-        api.get('/pagos', { params: { estado: 'SOLICITADO', limit: 500 } }),
+        api.get('/pagos', { params: { estado: 'PENDIENTE', limit: 200 } }),
+        api.get('/pagos', { params: { estado: 'SOLICITADO', limit: 200 } }),
       ]);
       const items = [...(r1.data.items || []), ...(r2.data.items || [])]
         .sort((a, b) => (b.fecha_pago > a.fecha_pago ? 1 : -1));
