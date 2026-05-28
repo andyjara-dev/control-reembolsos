@@ -101,7 +101,7 @@ export default function Pagos() {
     });
 
     api.get('/pagos/resumen').then((r) => {
-      if (!cancelled) setCantidadPendientes(r.data.cantidad_pendientes);
+      if (!cancelled) setCantidadPendientes(r.data.cantidad_no_pagados);
     });
 
     return () => { cancelled = true; };
@@ -378,8 +378,12 @@ export default function Pagos() {
     setReporteSeleccionados(new Set());
     setReporteOpen(true);
     try {
-      const r = await api.get('/pagos', { params: { estado: 'PENDIENTE', limit: 500 } });
-      const items = r.data.items || [];
+      const [r1, r2] = await Promise.all([
+        api.get('/pagos', { params: { estado: 'PENDIENTE', limit: 500 } }),
+        api.get('/pagos', { params: { estado: 'SOLICITADO', limit: 500 } }),
+      ]);
+      const items = [...(r1.data.items || []), ...(r2.data.items || [])]
+        .sort((a, b) => (b.fecha_pago > a.fecha_pago ? 1 : -1));
       const ids = new Set(items.map((p) => p.id));
       setReportePagos(items);
       setReporteSeleccionados(ids);
@@ -453,7 +457,7 @@ export default function Pagos() {
             startIcon={<Send />}
             onClick={handleAbrirReporte}
             disabled={cantidadPendientes === 0}
-            title={cantidadPendientes === 0 ? 'No hay pagos pendientes' : `Enviar reporte de pendientes (${cantidadPendientes} disponibles)`}
+            title={cantidadPendientes === 0 ? 'No hay pagos sin pagar' : `Enviar reporte de pagos sin pagar (${cantidadPendientes} disponibles)`}
           >
             Reporte pendientes
           </Button>
@@ -568,7 +572,7 @@ export default function Pagos() {
       {/* Dialog: Reporte de pagos pendientes */}
       <Dialog open={reporteOpen} onClose={() => setReporteOpen(false)} maxWidth="md" fullWidth>
         <DialogTitle sx={{ pr: 6 }}>
-          Reporte de pagos pendientes
+          Reporte de pagos sin pagar
           <IconButton size="small" onClick={() => setReporteOpen(false)} sx={{ position: 'absolute', right: 12, top: 12 }}>
             <Close fontSize="small" />
           </IconButton>

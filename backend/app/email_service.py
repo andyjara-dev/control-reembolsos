@@ -379,18 +379,18 @@ def enviar_solicitud(
 
 # ── Reporte de pagos pendientes ──────────────────────────────────────────────
 
-DEFAULT_ASUNTO_REPORTE = "Reporte de pagos pendientes — $cantidad pago(s) | Total CLP: $total_clp"
+DEFAULT_ASUNTO_REPORTE = "Reporte de pagos sin pagar — $cantidad pago(s) | Total CLP: $total_clp"
 
 DEFAULT_CUERPO_REPORTE = """\
 <html>
 <body style="font-family: Arial, sans-serif; color: #2c2c2c; max-width: 700px; margin: 0 auto;">
   <div style="background: #036b89; padding: 24px 20px; border-radius: 4px 4px 0 0;">
-    <h2 style="color: white; margin: 0; font-size: 20px;">Reporte de pagos pendientes</h2>
+    <h2 style="color: white; margin: 0; font-size: 20px;">Reporte de pagos sin pagar</h2>
     <p style="color: #FFB236; margin: 6px 0 0; font-size: 14px;">$nombre_remitente</p>
   </div>
   <div style="border: 1px solid #b0d9e4; border-top: none; padding: 20px; border-radius: 0 0 4px 4px;">
     <p style="margin: 0 0 16px; font-size: 14px;">Estimado/a <strong>$nombre_destinatario</strong>,</p>
-    <p style="margin: 0 0 16px; font-size: 14px;">Le envío el detalle de los <strong>$cantidad pago(s) pendiente(s)</strong>:</p>
+    <p style="margin: 0 0 16px; font-size: 14px;">Le envío el detalle de los <strong>$cantidad pago(s) sin pagar</strong>:</p>
     $tabla_pagos
     $totales_html
     <p style="margin-top: 18px; font-size: 12px; color: #888;">

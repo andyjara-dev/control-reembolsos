@@ -131,11 +131,14 @@ def generar_reporte(
     )
 
 
+_ESTADOS_NO_PAGADOS = ("PENDIENTE", "SOLICITADO")
+
+
 @router.post("/pendientes/reporte/preview", response_model=PreviewReporteResponse)
 def preview_reporte_pendientes(data: PreviewReporteRequest, db: Session = Depends(get_db)):
     pagos = (
         db.query(Pago)
-        .filter(Pago.id.in_(data.pago_ids), Pago.estado == "PENDIENTE")
+        .filter(Pago.id.in_(data.pago_ids), Pago.estado.in_(_ESTADOS_NO_PAGADOS))
         .order_by(Pago.fecha_pago.desc())
         .all()
     )
@@ -148,12 +151,12 @@ def preview_reporte_pendientes(data: PreviewReporteRequest, db: Session = Depend
 def enviar_reporte_pendientes(data: EnviarReporteRequest, db: Session = Depends(get_db)):
     pagos = (
         db.query(Pago)
-        .filter(Pago.id.in_(data.pago_ids), Pago.estado == "PENDIENTE")
+        .filter(Pago.id.in_(data.pago_ids), Pago.estado.in_(_ESTADOS_NO_PAGADOS))
         .order_by(Pago.fecha_pago.desc())
         .all()
     )
     if not pagos:
-        raise HTTPException(status_code=400, detail="No hay pagos pendientes seleccionados")
+        raise HTTPException(status_code=400, detail="No hay pagos sin pagar seleccionados")
     config = {c.clave: c.valor for c in db.query(Configuracion).all()}
     try:
         pdf_bytes = generar_pdf_reporte_bytes(pagos, config)
