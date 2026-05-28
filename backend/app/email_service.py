@@ -375,3 +375,255 @@ def enviar_solicitud(
         params["cc"] = [email_copia]
 
     resend.Emails.send(params)
+
+
+# ── Reporte de pagos pendientes ──────────────────────────────────────────────
+
+DEFAULT_ASUNTO_REPORTE = "Reporte de pagos pendientes — $cantidad pago(s) | Total CLP: $total_clp"
+
+DEFAULT_CUERPO_REPORTE = """\
+<html>
+<body style="font-family: Arial, sans-serif; color: #2c2c2c; max-width: 700px; margin: 0 auto;">
+  <div style="background: #036b89; padding: 24px 20px; border-radius: 4px 4px 0 0;">
+    <h2 style="color: white; margin: 0; font-size: 20px;">Reporte de pagos pendientes</h2>
+    <p style="color: #FFB236; margin: 6px 0 0; font-size: 14px;">$nombre_remitente</p>
+  </div>
+  <div style="border: 1px solid #b0d9e4; border-top: none; padding: 20px; border-radius: 0 0 4px 4px;">
+    <p style="margin: 0 0 16px; font-size: 14px;">Estimado/a <strong>$nombre_destinatario</strong>,</p>
+    <p style="margin: 0 0 16px; font-size: 14px;">Le envío el detalle de los <strong>$cantidad pago(s) pendiente(s)</strong>:</p>
+    $tabla_pagos
+    $totales_html
+    <p style="margin-top: 18px; font-size: 12px; color: #888;">
+      Se adjunta el PDF con el resumen completo.
+    </p>
+  </div>
+</body>
+</html>
+"""
+
+
+def _build_tabla_html(pagos: list) -> str:
+    rows = ""
+    for i, p in enumerate(pagos):
+        bg = "#f0fafc" if i % 2 == 0 else "white"
+        monto_str = _fmt_cl(p.monto, 2) if p.monto else "-"
+        moneda_str = p.moneda or ""
+        rows += (
+            f'<tr style="background:{bg}">'
+            f'<td style="padding:7px 12px;border:1px solid #b0d9e4;">'
+            f'{p.fecha_pago.strftime("%d/%m/%Y") if p.fecha_pago else "-"}</td>'
+            f'<td style="padding:7px 12px;border:1px solid #b0d9e4;">{p.concepto or "-"}</td>'
+            f'<td style="padding:7px 12px;border:1px solid #b0d9e4;">{p.proveedor or "-"}</td>'
+            f'<td style="padding:7px 12px;border:1px solid #b0d9e4;text-align:right;">'
+            f'{monto_str} {moneda_str}</td>'
+            f'<td style="padding:7px 12px;border:1px solid #b0d9e4;">{p.tipo or "-"}</td>'
+            f'</tr>'
+        )
+    return (
+        '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
+        '<tr style="background:#036b89;color:white;">'
+        '<th style="padding:8px 12px;text-align:left;border:1px solid #036b89;">Fecha</th>'
+        '<th style="padding:8px 12px;text-align:left;border:1px solid #036b89;">Concepto</th>'
+        '<th style="padding:8px 12px;text-align:left;border:1px solid #036b89;">Proveedor</th>'
+        '<th style="padding:8px 12px;text-align:right;border:1px solid #036b89;">Monto</th>'
+        '<th style="padding:8px 12px;text-align:left;border:1px solid #036b89;">Tipo</th>'
+        '</tr>'
+        + rows
+        + '</table>'
+    )
+
+
+def _build_totales_html(pagos: list) -> str:
+    from collections import defaultdict
+    from decimal import Decimal
+    por_moneda: dict = defaultdict(Decimal)
+    total_clp = Decimal(0)
+    for p in pagos:
+        if p.monto and p.moneda:
+            por_moneda[p.moneda] += p.monto
+        if p.monto_clp:
+            total_clp += p.monto_clp
+    lines = "".join(
+        f"<li><strong>{moneda}:</strong> {_fmt_cl(v, 2)}</li>"
+        for moneda, v in sorted(por_moneda.items())
+    )
+    if total_clp:
+        lines += f"<li><strong>Total CLP:</strong> {_fmt_cl(total_clp, 0)}</li>"
+    return f'<ul style="font-size:13px;margin-top:12px;">{lines}</ul>'
+
+
+def renderizar_reporte(pagos: list, config: dict, nombre_destinatario: str = "") -> dict:
+    from decimal import Decimal
+    nombre_remitente = config.get("nombre_remitente") or "Andy Jara M. — Consultor"
+    total_clp = sum((p.monto_clp or Decimal(0)) for p in pagos)
+    variables = {
+        "cantidad":            str(len(pagos)),
+        "total_clp":           _fmt_cl(total_clp, 0),
+        "nombre_destinatario": nombre_destinatario or "",
+        "nombre_remitente":    nombre_remitente,
+        "tabla_pagos":         _build_tabla_html(pagos),
+        "totales_html":        _build_totales_html(pagos),
+    }
+    return {
+        "asunto":     string.Template(DEFAULT_ASUNTO_REPORTE).safe_substitute(variables),
+        "cuerpo_html": string.Template(DEFAULT_CUERPO_REPORTE).safe_substitute(variables),
+    }
+
+
+def generar_pdf_reporte_bytes(pagos: list, config: dict | None = None) -> bytes:
+    from decimal import Decimal
+    from reportlab.lib import colors
+    from reportlab.lib.enums import TA_CENTER
+    from reportlab.lib.pagesizes import landscape, letter
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.units import cm
+    from reportlab.platypus import (
+        HRFlowable, Paragraph, SimpleDocTemplate,
+        Table as RLTable, TableStyle,
+    )
+
+    fonts = _get_pdf_fonts()
+    C = {k: colors.HexColor(v) for k, v in _PDF_COLORS.items()}
+    C["white"] = colors.white
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=landscape(letter),
+        topMargin=1.5 * cm, bottomMargin=1.5 * cm,
+        leftMargin=1.5 * cm, rightMargin=1.5 * cm,
+    )
+    elements = []
+
+    title_style = ParagraphStyle(
+        "RTitle", fontName=fonts["header"], fontSize=22,
+        textColor=C["white"], alignment=TA_CENTER, spaceAfter=0, spaceBefore=0,
+    )
+    date_style = ParagraphStyle(
+        "RDate", fontName=fonts["italic"], fontSize=9,
+        textColor=C["gold"], alignment=TA_CENTER,
+    )
+    header_band = RLTable(
+        [
+            [Paragraph("Reporte de Pagos", title_style)],
+            [Paragraph(f"Generado: {datetime.now(tz=_CHL_TZ).strftime('%d/%m/%Y %H:%M')}", date_style)],
+        ],
+        colWidths=[doc.width],
+    )
+    header_band.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, -1), C["navy_dark"]),
+        ("TOPPADDING",    (0, 0), (-1, 0),  16),
+        ("BOTTOMPADDING", (0, 0), (-1, 0),  4),
+        ("TOPPADDING",    (0, 1), (-1, 1),  2),
+        ("BOTTOMPADDING", (0, 1), (-1, 1),  14),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+    ]))
+    elements.append(header_band)
+    elements.append(HRFlowable(width="100%", thickness=3, color=C["gold"], spaceBefore=0, spaceAfter=10))
+
+    header_row = ["Fecha", "Concepto", "Proveedor", "Monto", "Moneda", "Monto CLP", "Tipo", "Estado"]
+    data = [header_row]
+    total_monto = Decimal("0")
+    total_clp = Decimal("0")
+    for p in pagos:
+        data.append([
+            p.fecha_pago.strftime("%d/%m/%Y") if p.fecha_pago else "-",
+            (p.concepto or "-")[:42],
+            (p.proveedor or "-")[:30],
+            f"{p.monto:,.2f}" if p.monto else "-",
+            p.moneda or "-",
+            f"{p.monto_clp:,.0f}" if p.monto_clp else "-",
+            p.tipo or "-",
+            p.estado or "-",
+        ])
+        total_monto += p.monto or Decimal("0")
+        total_clp += p.monto_clp or Decimal("0")
+    data.append(["", "", "TOTALES", f"{total_monto:,.2f}", "", f"{total_clp:,.0f}" if total_clp else "-", "", ""])
+
+    w = doc.width
+    col_widths = [w * 0.08, w * 0.22, w * 0.18, w * 0.11, w * 0.07, w * 0.13, w * 0.11, w * 0.10]
+    n = len(data)
+    alternating = [
+        ("BACKGROUND", (0, i), (-1, i), C["cream"] if i % 2 == 0 else C["white"])
+        for i in range(1, n - 1)
+    ]
+    table = RLTable(data, colWidths=col_widths, repeatRows=1)
+    table.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0),  (-1, 0),  C["navy"]),
+        ("TEXTCOLOR",     (0, 0),  (-1, 0),  C["white"]),
+        ("FONTNAME",      (0, 0),  (-1, 0),  fonts["header"]),
+        ("FONTSIZE",      (0, 0),  (-1, 0),  9),
+        ("ALIGN",         (0, 0),  (-1, 0),  "CENTER"),
+        ("TOPPADDING",    (0, 0),  (-1, 0),  8),
+        ("BOTTOMPADDING", (0, 0),  (-1, 0),  8),
+        ("FONTNAME",      (0, 1),  (-1, -2), fonts["normal"]),
+        ("FONTSIZE",      (0, 1),  (-1, -2), 8),
+        ("TEXTCOLOR",     (0, 1),  (-1, -2), C["charcoal"]),
+        ("TOPPADDING",    (0, 1),  (-1, -2), 5),
+        ("BOTTOMPADDING", (0, 1),  (-1, -2), 5),
+        ("BACKGROUND",    (0, -1), (-1, -1), C["gold_light"]),
+        ("FONTNAME",      (0, -1), (-1, -1), fonts["bold"]),
+        ("FONTSIZE",      (0, -1), (-1, -1), 9),
+        ("TEXTCOLOR",     (0, -1), (-1, -1), C["navy_dark"]),
+        ("TOPPADDING",    (0, -1), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, -1), (-1, -1), 7),
+        ("ALIGN",         (3, 1),  (3, -1),  "RIGHT"),
+        ("ALIGN",         (5, 1),  (5, -1),  "RIGHT"),
+        ("GRID",          (0, 0),  (-1, -1), 0.5, C["border"]),
+        ("LINEBELOW",     (0, 0),  (-1, 0),  1.5, C["gold"]),
+        ("LINEABOVE",     (0, -1), (-1, -1), 1.0, C["gold"]),
+        ("LEFTPADDING",   (0, 0),  (-1, -1), 6),
+        ("RIGHTPADDING",  (0, 0),  (-1, -1), 6),
+        *alternating,
+    ]))
+    elements.append(table)
+
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer.read()
+
+
+def enviar_reporte(
+    pagos: list,
+    email_destinatario: str,
+    pdf_bytes: bytes,
+    config: dict,
+    nombre_destinatario: str | None = None,
+    asunto: str | None = None,
+    cuerpo_html: str | None = None,
+) -> None:
+    import resend
+
+    api_key = config.get("resend_api_key") or ""
+    if not api_key:
+        raise ValueError("Resend API Key no configurada. Ve a Ajustes para configurarla.")
+
+    email_from = config.get("email_from") or "Control Reembolsos <noreply@resend.dev>"
+    email_copia = config.get("email_copia") or ""
+
+    if not asunto or not cuerpo_html:
+        rendered = renderizar_reporte(pagos, config, nombre_destinatario or "")
+        asunto = asunto or rendered["asunto"]
+        cuerpo_html = cuerpo_html or rendered["cuerpo_html"]
+
+    to_field = f"{nombre_destinatario} <{email_destinatario}>" if nombre_destinatario else email_destinatario
+
+    resend.api_key = api_key
+
+    params: resend.Emails.SendParams = {
+        "from": email_from,
+        "to": [to_field],
+        "subject": asunto,
+        "html": cuerpo_html,
+        "attachments": [
+            {
+                "filename": "reporte_pendientes.pdf",
+                "content": list(pdf_bytes),
+            }
+        ],
+    }
+    if email_copia:
+        params["cc"] = [email_copia]
+
+    resend.Emails.send(params)

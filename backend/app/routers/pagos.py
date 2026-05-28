@@ -14,9 +14,16 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_user
 from app.config import UPLOAD_DIR
 from app.database import get_db
-from app.email_service import _PDF_COLORS, _get_pdf_fonts, generar_pdf_bytes, enviar_solicitud, renderizar_solicitud
+from app.email_service import (
+    generar_pdf_bytes, enviar_solicitud, renderizar_solicitud,
+    generar_pdf_reporte_bytes, enviar_reporte, renderizar_reporte,
+)
 from app.models import Configuracion, Pago, ImagenPago, User
-from app.schemas import PagoCreate, PagoUpdate, PagoResponse, ImagenPagoResponse, ResumenResponse, PagosListResponse, SolicitarRequest, PreviewSolicitarResponse
+from app.schemas import (
+    PagoCreate, PagoUpdate, PagoResponse, ImagenPagoResponse, ResumenResponse,
+    PagosListResponse, SolicitarRequest, PreviewSolicitarResponse,
+    PreviewReporteRequest, PreviewReporteResponse, EnviarReporteRequest,
+)
 
 _CHL_TZ = ZoneInfo("America/Santiago")
 
@@ -104,16 +111,6 @@ def generar_reporte(
     hasta: date | None = Query(None),
     db: Session = Depends(get_db),
 ):
-    from reportlab.lib.pagesizes import letter, landscape
-    from reportlab.lib import colors
-    from reportlab.lib.enums import TA_CENTER, TA_RIGHT
-    from reportlab.lib.styles import ParagraphStyle
-    from reportlab.lib.units import cm
-    from reportlab.platypus import (
-        HRFlowable, Paragraph, SimpleDocTemplate, Spacer,
-        Table as RLTable, TableStyle,
-    )
-
     q = db.query(Pago)
     if estado:
         q = q.filter(Pago.estado == estado)
@@ -126,127 +123,54 @@ def generar_reporte(
     if hasta:
         q = q.filter(Pago.fecha_pago <= hasta)
     pagos = q.order_by(Pago.fecha_pago.desc()).all()
-
-    fonts = _get_pdf_fonts()
-    C = {k: colors.HexColor(v) for k, v in _PDF_COLORS.items()}
-    C["white"] = colors.white
-
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=landscape(letter),
-        topMargin=1.5 * cm, bottomMargin=1.5 * cm,
-        leftMargin=1.5 * cm, rightMargin=1.5 * cm,
-    )
-    elements = []
-
-    # ── Banda de cabecera ────────────────────────────────────────────────────
-    title_style = ParagraphStyle(
-        "RTitle",
-        fontName=fonts["header"],
-        fontSize=22,
-        textColor=C["white"],
-        alignment=TA_CENTER,
-        spaceAfter=0,
-        spaceBefore=0,
-    )
-    date_style = ParagraphStyle(
-        "RDate",
-        fontName=fonts["italic"],
-        fontSize=9,
-        textColor=C["gold"],
-        alignment=TA_CENTER,
-    )
-    header_band = RLTable(
-        [
-            [Paragraph("Reporte de Pagos", title_style)],
-            [Paragraph(f"Generado: {datetime.now(tz=_CHL_TZ).strftime('%d/%m/%Y %H:%M')}", date_style)],
-        ],
-        colWidths=[doc.width],
-    )
-    header_band.setStyle(TableStyle([
-        ("BACKGROUND",    (0, 0), (-1, -1), C["navy_dark"]),
-        ("TOPPADDING",    (0, 0), (-1, 0),  16),
-        ("BOTTOMPADDING", (0, 0), (-1, 0),  4),
-        ("TOPPADDING",    (0, 1), (-1, 1),  2),
-        ("BOTTOMPADDING", (0, 1), (-1, 1),  14),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
-    ]))
-    elements.append(header_band)
-    elements.append(HRFlowable(width="100%", thickness=3, color=C["gold"], spaceBefore=0, spaceAfter=10))
-
-    # ── Tabla de datos ───────────────────────────────────────────────────────
-    header_row = ["Fecha", "Concepto", "Proveedor", "Monto", "Moneda", "Monto CLP", "Tipo", "Estado"]
-    data = [header_row]
-    total_monto = Decimal("0")
-    total_clp = Decimal("0")
-    for p in pagos:
-        data.append([
-            p.fecha_pago.strftime("%d/%m/%Y") if p.fecha_pago else "-",
-            (p.concepto or "-")[:42],
-            (p.proveedor or "-")[:30],
-            f"{p.monto:,.2f}" if p.monto else "-",
-            p.moneda or "-",
-            f"{p.monto_clp:,.0f}" if p.monto_clp else "-",
-            p.tipo or "-",
-            p.estado or "-",
-        ])
-        total_monto += p.monto or Decimal("0")
-        total_clp += p.monto_clp or Decimal("0")
-    data.append(["", "", "TOTALES", f"{total_monto:,.2f}", "", f"{total_clp:,.0f}" if total_clp else "-", "", ""])
-
-    w = doc.width
-    col_widths = [w * 0.08, w * 0.22, w * 0.18, w * 0.11, w * 0.07, w * 0.13, w * 0.11, w * 0.10]
-
-    n = len(data)
-    alternating = [("BACKGROUND", (0, i), (-1, i), C["cream"] if i % 2 == 0 else C["white"])
-                   for i in range(1, n - 1)]
-
-    table = RLTable(data, colWidths=col_widths, repeatRows=1)
-    table.setStyle(TableStyle([
-        # Encabezado
-        ("BACKGROUND",    (0, 0),  (-1, 0),  C["navy"]),
-        ("TEXTCOLOR",     (0, 0),  (-1, 0),  C["white"]),
-        ("FONTNAME",      (0, 0),  (-1, 0),  fonts["header"]),
-        ("FONTSIZE",      (0, 0),  (-1, 0),  9),
-        ("ALIGN",         (0, 0),  (-1, 0),  "CENTER"),
-        ("TOPPADDING",    (0, 0),  (-1, 0),  8),
-        ("BOTTOMPADDING", (0, 0),  (-1, 0),  8),
-        # Cuerpo
-        ("FONTNAME",      (0, 1),  (-1, -2), fonts["normal"]),
-        ("FONTSIZE",      (0, 1),  (-1, -2), 8),
-        ("TEXTCOLOR",     (0, 1),  (-1, -2), C["charcoal"]),
-        ("TOPPADDING",    (0, 1),  (-1, -2), 5),
-        ("BOTTOMPADDING", (0, 1),  (-1, -2), 5),
-        # Fila de totales
-        ("BACKGROUND",    (0, -1), (-1, -1), C["gold_light"]),
-        ("FONTNAME",      (0, -1), (-1, -1), fonts["bold"]),
-        ("FONTSIZE",      (0, -1), (-1, -1), 9),
-        ("TEXTCOLOR",     (0, -1), (-1, -1), C["navy_dark"]),
-        ("TOPPADDING",    (0, -1), (-1, -1), 7),
-        ("BOTTOMPADDING", (0, -1), (-1, -1), 7),
-        # Alineación de montos
-        ("ALIGN",         (3, 1),  (3, -1),  "RIGHT"),
-        ("ALIGN",         (5, 1),  (5, -1),  "RIGHT"),
-        # Bordes
-        ("GRID",          (0, 0),  (-1, -1), 0.5, C["border"]),
-        ("LINEBELOW",     (0, 0),  (-1, 0),  1.5, C["gold"]),
-        ("LINEABOVE",     (0, -1), (-1, -1), 1.0, C["gold"]),
-        # Paddings laterales
-        ("LEFTPADDING",   (0, 0),  (-1, -1), 6),
-        ("RIGHTPADDING",  (0, 0),  (-1, -1), 6),
-        *alternating,
-    ]))
-    elements.append(table)
-
-    doc.build(elements)
-    buffer.seek(0)
+    pdf_bytes = generar_pdf_reporte_bytes(pagos)
     return StreamingResponse(
-        buffer,
+        io.BytesIO(pdf_bytes),
         media_type="application/pdf",
         headers={"Content-Disposition": "attachment; filename=reporte_pagos.pdf"},
     )
+
+
+@router.post("/pendientes/reporte/preview", response_model=PreviewReporteResponse)
+def preview_reporte_pendientes(data: PreviewReporteRequest, db: Session = Depends(get_db)):
+    pagos = (
+        db.query(Pago)
+        .filter(Pago.id.in_(data.pago_ids), Pago.estado == "PENDIENTE")
+        .order_by(Pago.fecha_pago.desc())
+        .all()
+    )
+    config = {c.clave: c.valor for c in db.query(Configuracion).all()}
+    rendered = renderizar_reporte(pagos, config, data.nombre_destinatario or "")
+    return PreviewReporteResponse(**rendered, cantidad_pendientes=len(pagos))
+
+
+@router.post("/pendientes/reporte")
+def enviar_reporte_pendientes(data: EnviarReporteRequest, db: Session = Depends(get_db)):
+    pagos = (
+        db.query(Pago)
+        .filter(Pago.id.in_(data.pago_ids), Pago.estado == "PENDIENTE")
+        .order_by(Pago.fecha_pago.desc())
+        .all()
+    )
+    if not pagos:
+        raise HTTPException(status_code=400, detail="No hay pagos pendientes seleccionados")
+    config = {c.clave: c.valor for c in db.query(Configuracion).all()}
+    try:
+        pdf_bytes = generar_pdf_reporte_bytes(pagos, config)
+        enviar_reporte(
+            pagos,
+            data.email_destinatario,
+            pdf_bytes,
+            config,
+            nombre_destinatario=data.nombre_destinatario,
+            asunto=data.asunto,
+            cuerpo_html=data.cuerpo_html,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Error al enviar reporte: {exc}")
+    return {"ok": True, "cantidad": len(pagos)}
 
 
 @router.get("/{pago_id}/pdf")

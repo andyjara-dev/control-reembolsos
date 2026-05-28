@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   Typography, Table, TableHead, TableRow, TableCell, TableBody, Button, Chip,
   Dialog, DialogTitle, DialogContent, DialogActions, TextField, MenuItem,
-  IconButton, Box, Stack, Alert, CircularProgress, Tabs, Tab, Divider,
+  IconButton, Box, Stack, Alert, CircularProgress, Tabs, Tab, Divider, Checkbox,
 } from '@mui/material';
 import { Add, Edit, Delete, Download, PictureAsPdf, Image as ImageIcon, Close, Send, Refresh } from '@mui/icons-material';
 import api from '../api';
@@ -58,6 +58,18 @@ export default function Pagos() {
   const [solicitarError, setSolicitarError] = useState('');
   const [existingImagenesCobro, setExistingImagenesCobro] = useState([]);
   const [existingImagenesReembolso, setExistingImagenesReembolso] = useState([]);
+  const [reporteOpen, setReporteOpen] = useState(false);
+  const [reportePagos, setReportePagos] = useState([]);
+  const [reporteSeleccionados, setReporteSeleccionados] = useState(new Set());
+  const [reporteEmail, setReporteEmail] = useState('');
+  const [reporteNombre, setReporteNombre] = useState('');
+  const [reporteAsunto, setReporteAsunto] = useState('');
+  const [reporteCuerpo, setReporteCuerpo] = useState('');
+  const [reporteTab, setReporteTab] = useState(0);
+  const [reporteLoadingPreview, setReporteLoadingPreview] = useState(false);
+  const [reporteLoading, setReporteLoading] = useState(false);
+  const [reporteError, setReporteError] = useState('');
+  const [cantidadPendientes, setCantidadPendientes] = useState(0);
   const sentinelRef = useRef(null);
   const pagosRef = useRef([]);
 
@@ -86,6 +98,10 @@ export default function Pagos() {
       setPagos(data.items);
       setTotales({ clp: data.total_monto_clp, usd: data.total_monto_usd });
       setHasMore(data.items.length < data.total);
+    });
+
+    api.get('/pagos/resumen').then((r) => {
+      if (!cancelled) setCantidadPendientes(r.data.cantidad_pendientes);
     });
 
     return () => { cancelled = true; };
@@ -330,6 +346,93 @@ export default function Pagos() {
     }
   };
 
+  const cargarPreviewReporte = async (ids, nombre) => {
+    if (ids.size === 0) {
+      setReporteAsunto('');
+      setReporteCuerpo('');
+      return;
+    }
+    setReporteLoadingPreview(true);
+    try {
+      const r = await api.post('/pagos/pendientes/reporte/preview', {
+        pago_ids: [...ids],
+        nombre_destinatario: nombre || null,
+      });
+      setReporteAsunto(r.data.asunto);
+      setReporteCuerpo(r.data.cuerpo_html);
+    } catch {
+      setReporteError('Error al cargar la vista previa del reporte');
+    } finally {
+      setReporteLoadingPreview(false);
+    }
+  };
+
+  const handleAbrirReporte = async () => {
+    setReporteEmail('');
+    setReporteNombre('');
+    setReporteAsunto('');
+    setReporteCuerpo('');
+    setReporteTab(0);
+    setReporteError('');
+    setReportePagos([]);
+    setReporteSeleccionados(new Set());
+    setReporteOpen(true);
+    try {
+      const r = await api.get('/pagos', { params: { estado: 'PENDIENTE', limit: 500 } });
+      const items = r.data.items || [];
+      const ids = new Set(items.map((p) => p.id));
+      setReportePagos(items);
+      setReporteSeleccionados(ids);
+      await cargarPreviewReporte(ids, '');
+    } catch {
+      setReporteError('Error al cargar los pagos pendientes');
+    }
+  };
+
+  const handleTogglePago = async (id) => {
+    const next = new Set(reporteSeleccionados);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    setReporteSeleccionados(next);
+    await cargarPreviewReporte(next, reporteNombre);
+  };
+
+  const handleToggleTodos = async () => {
+    const allIds = new Set(reportePagos.map((p) => p.id));
+    const allSelected = reportePagos.every((p) => reporteSeleccionados.has(p.id));
+    const next = allSelected ? new Set() : allIds;
+    setReporteSeleccionados(next);
+    await cargarPreviewReporte(next, reporteNombre);
+  };
+
+  const handleRegenerarPreviewReporte = () => cargarPreviewReporte(reporteSeleccionados, reporteNombre);
+
+  const handleEnviarReporte = async () => {
+    if (reporteSeleccionados.size === 0) {
+      setReporteError('Selecciona al menos un pago para incluir en el reporte');
+      return;
+    }
+    if (!reporteEmail) {
+      setReporteError('Ingresa el email del destinatario');
+      return;
+    }
+    setReporteLoading(true);
+    setReporteError('');
+    try {
+      await api.post('/pagos/pendientes/reporte', {
+        pago_ids: [...reporteSeleccionados],
+        email_destinatario: reporteEmail,
+        nombre_destinatario: reporteNombre || null,
+        asunto: reporteAsunto || null,
+        cuerpo_html: reporteCuerpo || null,
+      });
+      setReporteOpen(false);
+    } catch (err) {
+      setReporteError(err.response?.data?.detail || 'Error al enviar el reporte');
+    } finally {
+      setReporteLoading(false);
+    }
+  };
+
   const nextEstado = (estado) => {
     if (estado === 'PENDIENTE') return 'SOLICITADO';
     if (estado === 'SOLICITADO') return 'PAGADO';
@@ -344,6 +447,16 @@ export default function Pagos() {
         <Typography variant="h5">Pagos</Typography>
         <Stack direction="row" spacing={1}>
           <Button variant="outlined" startIcon={<PictureAsPdf />} onClick={handleDescargarReporte}>Reporte PDF</Button>
+          <Button
+            variant="outlined"
+            color="warning"
+            startIcon={<Send />}
+            onClick={handleAbrirReporte}
+            disabled={cantidadPendientes === 0}
+            title={cantidadPendientes === 0 ? 'No hay pagos pendientes' : `Enviar reporte de pendientes (${cantidadPendientes} disponibles)`}
+          >
+            Reporte pendientes
+          </Button>
           <Button variant="contained" startIcon={<Add />} onClick={() => handleOpen()}>Nuevo Pago</Button>
         </Stack>
       </Box>
@@ -451,6 +564,150 @@ export default function Pagos() {
       <Box ref={sentinelRef} sx={{ height: 20, display: 'flex', justifyContent: 'center', alignItems: 'center', mt: 1 }}>
         {isLoadingMore && <CircularProgress size={24} />}
       </Box>
+
+      {/* Dialog: Reporte de pagos pendientes */}
+      <Dialog open={reporteOpen} onClose={() => setReporteOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle sx={{ pr: 6 }}>
+          Reporte de pagos pendientes
+          <IconButton size="small" onClick={() => setReporteOpen(false)} sx={{ position: 'absolute', right: 12, top: 12 }}>
+            <Close fontSize="small" />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            {reporteError && <Alert severity="error">{reporteError}</Alert>}
+
+            {/* Lista de pagos con checkboxes */}
+            <Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
+                <Checkbox
+                  size="small"
+                  checked={reportePagos.length > 0 && reportePagos.every((p) => reporteSeleccionados.has(p.id))}
+                  indeterminate={
+                    reportePagos.some((p) => reporteSeleccionados.has(p.id)) &&
+                    !reportePagos.every((p) => reporteSeleccionados.has(p.id))
+                  }
+                  onChange={handleToggleTodos}
+                />
+                <Typography variant="body2" sx={{ fontWeight: 600, cursor: 'pointer' }} onClick={handleToggleTodos}>
+                  Seleccionar todos ({reporteSeleccionados.size}/{reportePagos.length})
+                </Typography>
+              </Box>
+              <Box sx={{ maxHeight: 220, overflowY: 'auto', border: '1px solid #ddd', borderRadius: 1, p: 0.5 }}>
+                {reportePagos.length === 0 ? (
+                  <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}><CircularProgress size={24} /></Box>
+                ) : (
+                  reportePagos.map((p) => (
+                    <Box
+                      key={p.id}
+                      sx={{
+                        display: 'flex', alignItems: 'center', py: 0.25,
+                        borderBottom: '1px solid #f0f0f0', '&:last-child': { borderBottom: 'none' },
+                        cursor: 'pointer', borderRadius: 1,
+                        '&:hover': { bgcolor: '#f5f5f5' },
+                      }}
+                      onClick={() => handleTogglePago(p.id)}
+                    >
+                      <Checkbox size="small" checked={reporteSeleccionados.has(p.id)} onChange={() => handleTogglePago(p.id)} onClick={(e) => e.stopPropagation()} />
+                      <Box sx={{ fontSize: 13, flex: 1 }}>
+                        <span style={{ color: '#666', marginRight: 8 }}>{p.fecha_pago}</span>
+                        <strong>{p.concepto}</strong>
+                        <span style={{ color: '#555', margin: '0 6px' }}>—</span>
+                        <span>{p.proveedor}</span>
+                        <span style={{ color: '#036b89', marginLeft: 8, fontWeight: 600 }}>
+                          {Number(p.monto).toLocaleString('es-CL', { minimumFractionDigits: 2 })} {p.moneda}
+                        </span>
+                        <Chip label={p.tipo} size="small" sx={{ ml: 1, fontSize: 10 }} />
+                      </Box>
+                    </Box>
+                  ))
+                )}
+              </Box>
+            </Box>
+
+            <Alert severity="info" sx={{ fontSize: 13 }}>
+              {reporteSeleccionados.size} pago(s) seleccionado(s) para incluir en el reporte
+            </Alert>
+
+            {/* Destinatario */}
+            <Stack direction="row" spacing={2}>
+              <TextField
+                label="Email destinatario"
+                type="email"
+                value={reporteEmail}
+                onChange={(e) => setReporteEmail(e.target.value)}
+                required
+                sx={{ flex: 1 }}
+                autoFocus
+              />
+              <TextField
+                label="Nombre destinatario"
+                value={reporteNombre}
+                onChange={(e) => setReporteNombre(e.target.value)}
+                sx={{ flex: 1 }}
+                InputProps={{
+                  endAdornment: (
+                    <IconButton size="small" onClick={handleRegenerarPreviewReporte} title="Regenerar preview con este nombre" disabled={reporteLoadingPreview}>
+                      <Refresh fontSize="small" />
+                    </IconButton>
+                  ),
+                }}
+              />
+            </Stack>
+
+            <Divider />
+
+            {/* Asunto */}
+            <TextField
+              label="Asunto"
+              value={reporteAsunto}
+              onChange={(e) => setReporteAsunto(e.target.value)}
+              fullWidth
+              disabled={reporteLoadingPreview}
+            />
+
+            {/* Cuerpo con tabs editar/preview */}
+            <Box>
+              <Tabs value={reporteTab} onChange={(_, v) => setReporteTab(v)} sx={{ mb: 1, borderBottom: 1, borderColor: 'divider' }}>
+                <Tab label="Editar HTML" />
+                <Tab label="Vista previa" />
+              </Tabs>
+
+              {reporteLoadingPreview ? (
+                <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                  <CircularProgress />
+                </Box>
+              ) : reporteTab === 0 ? (
+                <TextField
+                  multiline
+                  rows={12}
+                  value={reporteCuerpo}
+                  onChange={(e) => setReporteCuerpo(e.target.value)}
+                  fullWidth
+                  inputProps={{ style: { fontFamily: 'monospace', fontSize: 12 } }}
+                />
+              ) : (
+                <Box
+                  sx={{ border: '1px solid #ddd', borderRadius: 1, p: 2, minHeight: 200, bgcolor: 'white', overflow: 'auto' }}
+                  dangerouslySetInnerHTML={{ __html: reporteCuerpo }}
+                />
+              )}
+            </Box>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setReporteOpen(false)} disabled={reporteLoading}>Cancelar</Button>
+          <Button
+            variant="contained"
+            color="warning"
+            startIcon={reporteLoading ? <CircularProgress size={16} /> : <Send />}
+            onClick={handleEnviarReporte}
+            disabled={reporteLoading || reporteLoadingPreview || reporteSeleccionados.size === 0}
+          >
+            Enviar reporte ({reporteSeleccionados.size})
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Dialog: Solicitar al destinatario */}
       <Dialog open={solicitarOpen} onClose={() => setSolicitarOpen(false)} maxWidth="md" fullWidth>

@@ -31,6 +31,25 @@ class PreviewSolicitarResponse(BaseModel):
     cuerpo_html: str
 
 
+class PreviewReporteRequest(BaseModel):
+    pago_ids: list[int]
+    nombre_destinatario: str | None = None
+
+
+class PreviewReporteResponse(BaseModel):
+    asunto: str
+    cuerpo_html: str
+    cantidad_pendientes: int
+
+
+class EnviarReporteRequest(BaseModel):
+    pago_ids: list[int]
+    email_destinatario: str
+    nombre_destinatario: str | None = None
+    asunto: str | None = None
+    cuerpo_html: str | None = None
+
+
 class PagoBase(BaseModel):
     fecha_pago: date
     concepto: str
