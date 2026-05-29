@@ -390,7 +390,10 @@ DEFAULT_CUERPO_REPORTE = """\
   </div>
   <div style="border: 1px solid #b0d9e4; border-top: none; padding: 20px; border-radius: 0 0 4px 4px;">
     <p style="margin: 0 0 16px; font-size: 14px;">Estimado/a <strong>$nombre_destinatario</strong>,</p>
-    <p style="margin: 0 0 16px; font-size: 14px;">Le envío el detalle de los <strong>$cantidad pago(s) sin pagar</strong>:</p>
+    <p style="margin: 0 0 16px; font-size: 14px;">
+      Por medio del presente correo le informo que existen actualmente <strong>$cantidad pago(s) pendiente(s)</strong>
+      que requieren atención. A continuación encontrará el detalle de cada uno de ellos para su revisión y gestión oportuna:
+    </p>
     $tabla_pagos
     $totales_html
     <p style="margin-top: 18px; font-size: 12px; color: #888;">
@@ -592,6 +595,7 @@ def enviar_reporte(
     nombre_destinatario: str | None = None,
     asunto: str | None = None,
     cuerpo_html: str | None = None,
+    pdfs_individuales: list | None = None,
 ) -> None:
     import resend
 
@@ -611,17 +615,20 @@ def enviar_reporte(
 
     resend.api_key = api_key
 
+    attachments = [{"filename": "reporte_pendientes.pdf", "content": list(pdf_bytes)}]
+    for pago, ind_bytes in (pdfs_individuales or []):
+        concepto = (pago.concepto or "pago").replace(" ", "_")[:30]
+        attachments.append({
+            "filename": f"solicitud_{pago.tipo.lower()}_{pago.id}_{concepto}.pdf",
+            "content": list(ind_bytes),
+        })
+
     params: resend.Emails.SendParams = {
         "from": email_from,
         "to": [to_field],
         "subject": asunto,
         "html": cuerpo_html,
-        "attachments": [
-            {
-                "filename": "reporte_pendientes.pdf",
-                "content": list(pdf_bytes),
-            }
-        ],
+        "attachments": attachments,
     }
     if email_copia:
         params["cc"] = [email_copia]

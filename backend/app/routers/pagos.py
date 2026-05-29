@@ -160,6 +160,10 @@ def enviar_reporte_pendientes(data: EnviarReporteRequest, db: Session = Depends(
     config = {c.clave: c.valor for c in db.query(Configuracion).all()}
     try:
         pdf_bytes = generar_pdf_reporte_bytes(pagos, config)
+        pdfs_individuales = [
+            (pago, generar_pdf_bytes(pago, db, config))
+            for pago in pagos
+        ]
         enviar_reporte(
             pagos,
             data.email_destinatario,
@@ -168,6 +172,7 @@ def enviar_reporte_pendientes(data: EnviarReporteRequest, db: Session = Depends(
             nombre_destinatario=data.nombre_destinatario,
             asunto=data.asunto,
             cuerpo_html=data.cuerpo_html,
+            pdfs_individuales=pdfs_individuales,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
