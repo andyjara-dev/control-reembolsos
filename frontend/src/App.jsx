@@ -6,7 +6,7 @@ import Dashboard from './pages/Dashboard';
 import Pagos from './pages/Pagos';
 import Ajustes from './pages/Ajustes';
 import {
-  AppBar, Toolbar, Typography, Button, Box, Container,
+  AppBar, Toolbar, Button, Box, Container,
   Dialog, DialogTitle, DialogContent, DialogActions,
   TextField, Stack, Alert,
 } from '@mui/material';
@@ -91,6 +91,37 @@ function PrivateRoute({ children }) {
   return isAuth ? children : <Navigate to="/login" />;
 }
 
+function AppLogo() {
+  return (
+    <svg viewBox="0 0 220 44" height="36" xmlns="http://www.w3.org/2000/svg" aria-label="Reembolsos">
+      <defs>
+        <linearGradient id="abagGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#60c8ff" />
+          <stop offset="100%" stopColor="#1570b8" />
+        </linearGradient>
+        <linearGradient id="asGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor="#38bdf8" />
+          <stop offset="100%" stopColor="#818cf8" />
+        </linearGradient>
+      </defs>
+      {/* Knot */}
+      <ellipse cx="22" cy="12" rx="7" ry="3" fill="#0d5fa8" />
+      {/* Neck */}
+      <rect x="17" y="12" width="10" height="7" rx="1" fill="url(#abagGrad)" />
+      {/* Body */}
+      <ellipse cx="22" cy="30" rx="15" ry="13" fill="url(#abagGrad)" />
+      {/* Arrow */}
+      <path d="M14 33 A9 9 0 0 1 30 33" stroke="white" strokeWidth="2.5" fill="none" strokeLinecap="round" />
+      <polygon points="14,28 9,33 14,38" fill="white" />
+      {/* Text */}
+      <text fontFamily="Arial, sans-serif" fontWeight="bold" fontSize="20" y="34" x="44">
+        <tspan fill="white">reembolso</tspan>
+        <tspan fill="url(#asGrad)">s</tspan>
+      </text>
+    </svg>
+  );
+}
+
 function Layout() {
   const { logout } = useAuth();
   const [pwdOpen, setPwdOpen] = useState(false);
@@ -99,9 +130,9 @@ function Layout() {
     <>
       <AppBar position="static">
         <Toolbar>
-          <Typography variant="h6" sx={{ flexGrow: 1 }}>
-            Control de Reembolsos
-          </Typography>
+          <Box sx={{ flexGrow: 1, display: 'flex', alignItems: 'center' }}>
+            <AppLogo />
+          </Box>
           <Button color="inherit" component={RouterLink} to="/">Dashboard</Button>
           <Button color="inherit" component={RouterLink} to="/pagos">Pagos</Button>
           <Button color="inherit" component={RouterLink} to="/ajustes">Ajustes</Button>
