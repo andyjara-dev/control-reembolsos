@@ -26,6 +26,14 @@ with engine.connect() as conn:
         except Exception:
             conn.rollback()
 
+    # Migración tabla users
+    try:
+        conn.execute(text("ALTER TABLE users ADD COLUMN email VARCHAR(254)"))
+        conn.commit()
+        print("Columna 'email' agregada a users.")
+    except Exception:
+        conn.rollback()
+
 db = SessionLocal()
 try:
     existing = db.query(User).filter(User.username == ADMIN_USER).first()
