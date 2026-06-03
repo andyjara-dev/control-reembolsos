@@ -134,6 +134,14 @@ class CambiarPasswordRequest(BaseModel):
     password_nuevo: str
 
 
+class OlvidePasswordRequest(BaseModel):
+    username: str
+
+
+class ActualizarEmailRequest(BaseModel):
+    email: str
+
+
 class PagosListResponse(BaseModel):
     items: list[PagoResponse]
     total: int

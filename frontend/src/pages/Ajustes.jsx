@@ -5,6 +5,56 @@ import {
 } from '@mui/material';
 import api from '../api';
 
+function PerfilEmail() {
+  const [email, setEmail] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    api.get('/auth/perfil').then((r) => setEmail(r.data.email || '')).finally(() => setLoading(false));
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true); setMsg(''); setErr('');
+    try {
+      await api.put('/auth/actualizar-email', { email });
+      setMsg('Email actualizado correctamente');
+    } catch (e) {
+      setErr(e.response?.data?.detail || 'Error al guardar');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) return <CircularProgress size={20} />;
+
+  return (
+    <Paper sx={{ p: 3, maxWidth: 700, mb: 3 }}>
+      <Typography variant="h6" sx={{ mb: 1 }}>Email de recuperación</Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+        Este email se usa para enviarte una contraseña temporal si olvidas tu contraseña.
+      </Typography>
+      {msg && <Alert severity="success" sx={{ mb: 2 }}>{msg}</Alert>}
+      {err && <Alert severity="error" sx={{ mb: 2 }}>{err}</Alert>}
+      <Stack direction="row" spacing={2} alignItems="flex-start">
+        <TextField
+          label="Tu email"
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          size="small"
+          sx={{ flex: 1 }}
+        />
+        <Button variant="contained" onClick={handleSave} disabled={saving} sx={{ mt: 0 }}>
+          {saving ? <CircularProgress size={18} /> : 'Guardar'}
+        </Button>
+      </Stack>
+    </Paper>
+  );
+}
+
 const CLAVES = [
   'resend_api_key',
   'nombre_remitente',
@@ -64,6 +114,8 @@ export default function Ajustes() {
   return (
     <>
       <Typography variant="h5" sx={{ mb: 3 }}>Ajustes</Typography>
+
+      <PerfilEmail />
 
       <Paper sx={{ p: 3, maxWidth: 700 }}>
         <Typography variant="h6" sx={{ mb: 2 }}>Configuración de Email (Resend)</Typography>
