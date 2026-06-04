@@ -31,39 +31,39 @@ DEFAULT_CUERPO = """\
     <p style="color: #FFB236; margin: 6px 0 0; font-size: 14px;">$nombre_remitente</p>
   </div>
   <div style="border: 1px solid #b0d9e4; border-top: none; padding: 20px; border-radius: 0 0 4px 4px;">
-    <p style="margin: 0 0 16px; font-size: 14px;">Estimado/a <strong>$nombre_destinatario</strong>,</p>
-    <p style="margin: 0 0 16px; font-size: 14px;">Le envío adjunto la solicitud de $tipo correspondiente al siguiente gasto:</p>
+    <p style="margin: 0 0 16px; font-size: 14px; color: #2c2c2c;">Estimado/a <strong>$nombre_destinatario</strong>,</p>
+    <p style="margin: 0 0 16px; font-size: 14px; color: #2c2c2c;">Le envío adjunto la solicitud de $tipo correspondiente al siguiente gasto:</p>
     <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
       <tr style="background: #fff8ed;">
         <td style="padding: 9px 14px; font-weight: bold; color: #036b89; width: 38%;">Concepto</td>
-        <td style="padding: 9px 14px;">$concepto</td>
+        <td style="padding: 9px 14px; color: #2c2c2c;">$concepto</td>
       </tr>
       <tr>
         <td style="padding: 9px 14px; font-weight: bold; color: #036b89;">Proveedor</td>
-        <td style="padding: 9px 14px;">$proveedor</td>
+        <td style="padding: 9px 14px; color: #2c2c2c;">$proveedor</td>
       </tr>
       <tr style="background: #fff8ed;">
         <td style="padding: 9px 14px; font-weight: bold; color: #036b89;">Monto</td>
-        <td style="padding: 9px 14px;">$monto $moneda</td>
+        <td style="padding: 9px 14px; color: #2c2c2c;">$monto $moneda</td>
       </tr>
       <tr>
         <td style="padding: 9px 14px; font-weight: bold; color: #036b89;">Equivalente CLP</td>
-        <td style="padding: 9px 14px;">$monto_clp</td>
+        <td style="padding: 9px 14px; color: #2c2c2c;">$monto_clp</td>
       </tr>
       <tr style="background: #fff8ed;">
         <td style="padding: 9px 14px; font-weight: bold; color: #036b89;">Fecha de pago</td>
-        <td style="padding: 9px 14px;">$fecha_pago</td>
+        <td style="padding: 9px 14px; color: #2c2c2c;">$fecha_pago</td>
       </tr>
       <tr>
         <td style="padding: 9px 14px; font-weight: bold; color: #036b89;">Comprobante</td>
-        <td style="padding: 9px 14px;">$comprobante</td>
+        <td style="padding: 9px 14px; color: #2c2c2c;">$comprobante</td>
       </tr>
       <tr style="background: #fff8ed;">
         <td style="padding: 9px 14px; font-weight: bold; color: #036b89;">Notas</td>
-        <td style="padding: 9px 14px;">$notas</td>
+        <td style="padding: 9px 14px; color: #2c2c2c;">$notas</td>
       </tr>
     </table>
-    <p style="margin-top: 18px; font-size: 12px; color: #888;">
+    <p style="margin-top: 18px; font-size: 12px; color: #888888;">
       Se adjunta el PDF con el detalle completo de la solicitud.
     </p>
   </div>
@@ -389,8 +389,8 @@ DEFAULT_CUERPO_REPORTE = """\
     <p style="color: #FFB236; margin: 6px 0 0; font-size: 14px;">$nombre_remitente</p>
   </div>
   <div style="border: 1px solid #b0d9e4; border-top: none; padding: 20px; border-radius: 0 0 4px 4px;">
-    <p style="margin: 0 0 16px; font-size: 14px;">Estimado/a <strong>$nombre_destinatario</strong>,</p>
-    <p style="margin: 0 0 16px; font-size: 14px;">
+    <p style="margin: 0 0 16px; font-size: 14px; color: #2c2c2c;">Estimado/a <strong>$nombre_destinatario</strong>,</p>
+    <p style="margin: 0 0 16px; font-size: 14px; color: #2c2c2c;">
       Por medio del presente correo le informo que existen actualmente <strong>$cantidad pago(s) pendiente(s)</strong>
       que requieren atención. A continuación encontrará el detalle de cada uno de ellos para su revisión y gestión oportuna:
     </p>
@@ -413,13 +413,13 @@ def _build_tabla_html(pagos: list) -> str:
         moneda_str = p.moneda or ""
         rows += (
             f'<tr style="background:{bg}">'
-            f'<td style="padding:7px 12px;border:1px solid #b0d9e4;">'
+            f'<td style="padding:7px 12px;border:1px solid #b0d9e4;color:#2c2c2c;">'
             f'{p.fecha_pago.strftime("%d/%m/%Y") if p.fecha_pago else "-"}</td>'
-            f'<td style="padding:7px 12px;border:1px solid #b0d9e4;">{p.concepto or "-"}</td>'
-            f'<td style="padding:7px 12px;border:1px solid #b0d9e4;">{p.proveedor or "-"}</td>'
-            f'<td style="padding:7px 12px;border:1px solid #b0d9e4;text-align:right;">'
+            f'<td style="padding:7px 12px;border:1px solid #b0d9e4;color:#2c2c2c;">{p.concepto or "-"}</td>'
+            f'<td style="padding:7px 12px;border:1px solid #b0d9e4;color:#2c2c2c;">{p.proveedor or "-"}</td>'
+            f'<td style="padding:7px 12px;border:1px solid #b0d9e4;text-align:right;color:#2c2c2c;">'
             f'{monto_str} {moneda_str}</td>'
-            f'<td style="padding:7px 12px;border:1px solid #b0d9e4;">{p.tipo or "-"}</td>'
+            f'<td style="padding:7px 12px;border:1px solid #b0d9e4;color:#2c2c2c;">{p.tipo or "-"}</td>'
             f'</tr>'
         )
     return (
@@ -452,7 +452,7 @@ def _build_totales_html(pagos: list) -> str:
     )
     if total_clp:
         lines += f"<li><strong>Total CLP:</strong> {_fmt_cl(total_clp, 0)}</li>"
-    return f'<ul style="font-size:13px;margin-top:12px;">{lines}</ul>'
+    return f'<ul style="font-size:13px;margin-top:12px;color:#2c2c2c;">{lines}</ul>'
 
 
 def renderizar_reporte(pagos: list, config: dict, nombre_destinatario: str = "") -> dict:
